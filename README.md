@@ -51,8 +51,8 @@ $ npm install --save t140llm
 #### Basic Usage
 
 ```typescript
-import { processAIStream } from 't140llm';
-import { OpenAI } from 'openai';
+import { processAIStream } from "t140llm";
+import { OpenAI } from "openai";
 
 // Initialize your LLM client
 const openai = new OpenAI({
@@ -61,8 +61,8 @@ const openai = new OpenAI({
 
 // Create a streaming response
 const stream = await openai.chat.completions.create({
-  model: 'gpt-4',
-  messages: [{ role: 'user', content: 'Write a short story.' }],
+  model: "gpt-4",
+  messages: [{ role: "user", content: "Write a short story." }],
   stream: true,
 });
 
@@ -73,9 +73,9 @@ processAIStream(stream);
 #### With Vercel AI SDK
 
 ```typescript
-import { processAIStream } from 't140llm';
-import { StreamingTextResponse, Message } from 'ai';
-import { OpenAI } from 'openai';
+import { processAIStream } from "t140llm";
+import { StreamingTextResponse, Message } from "ai";
+import { OpenAI } from "openai";
 
 // Initialize OpenAI client
 const openai = new OpenAI({
@@ -88,7 +88,7 @@ export async function POST(req: Request) {
 
   // Create a stream with the Vercel AI SDK
   const response = await openai.chat.completions.create({
-    model: 'gpt-4',
+    model: "gpt-4",
     messages,
     stream: true,
   });
@@ -104,8 +104,8 @@ export async function POST(req: Request) {
 #### With Anthropic Claude
 
 ```typescript
-import { processAIStream } from 't140llm';
-import Anthropic from '@anthropic-ai/sdk';
+import { processAIStream } from "t140llm";
+import Anthropic from "@anthropic-ai/sdk";
 
 // Initialize Anthropic client
 const anthropic = new Anthropic({
@@ -114,8 +114,8 @@ const anthropic = new Anthropic({
 
 // Create a streaming response
 const stream = await anthropic.messages.create({
-  model: 'claude-3-sonnet-20240229',
-  messages: [{ role: 'user', content: 'Write a short story.' }],
+  model: "claude-3-sonnet-20240229",
+  messages: [{ role: "user", content: "Write a short story." }],
   stream: true,
 });
 
@@ -128,8 +128,8 @@ processAIStream(stream);
 For direct RTP streaming without needing a WebSocket intermediary:
 
 ```typescript
-import { processAIStreamToRtp } from 't140llm';
-import { OpenAI } from 'openai';
+import { processAIStreamToRtp } from "t140llm";
+import { OpenAI } from "openai";
 
 // Initialize your LLM client
 const openai = new OpenAI({
@@ -138,23 +138,23 @@ const openai = new OpenAI({
 
 // Create a streaming response
 const stream = await openai.chat.completions.create({
-  model: 'gpt-4',
-  messages: [{ role: 'user', content: 'Write a short story.' }],
+  model: "gpt-4",
+  messages: [{ role: "user", content: "Write a short story." }],
   stream: true,
 });
 
 // Stream directly to a remote endpoint using RTP
 const transport = processAIStreamToRtp(
   stream,
-  '192.168.1.100',  // Remote IP address
-  5004,             // RTP port (optional, default: 5004)
+  "192.168.1.100", // Remote IP address
+  5004, // RTP port (optional, default: 5004)
   {
-    payloadType: 96,           // T.140 payload type (optional)
-    ssrc: 12345,               // RTP SSRC identifier (optional)
-    initialSequenceNumber: 0,  // Starting sequence number (optional)
-    initialTimestamp: 0,       // Starting timestamp (optional)
-    timestampIncrement: 160    // Timestamp increment per packet (optional)
-  }
+    payloadType: 96, // T.140 payload type (optional)
+    ssrc: 12345, // RTP SSRC identifier (optional)
+    initialSequenceNumber: 0, // Starting sequence number (optional)
+    initialTimestamp: 0, // Starting timestamp (optional)
+    timestampIncrement: 160, // Timestamp increment per packet (optional)
+  },
 );
 
 // Later, you can close the transport if needed
@@ -166,8 +166,8 @@ const transport = processAIStreamToRtp(
 For secure SRTP streaming:
 
 ```typescript
-import { processAIStreamToSrtp, createSrtpKeysFromPassphrase } from 't140llm';
-import { OpenAI } from 'openai';
+import { processAIStreamToSrtp, createSrtpKeysFromPassphrase } from "t140llm";
+import { OpenAI } from "openai";
 
 // Initialize your LLM client
 const openai = new OpenAI({
@@ -176,30 +176,46 @@ const openai = new OpenAI({
 
 // Create a streaming response
 const stream = await openai.chat.completions.create({
-  model: 'gpt-4',
-  messages: [{ role: 'user', content: 'Write a short story.' }],
+  model: "gpt-4",
+  messages: [{ role: "user", content: "Write a short story." }],
   stream: true,
 });
 
 // Generate SRTP keys from a passphrase
 // In a real application, you would exchange these securely with the remote endpoint
-const { masterKey, masterSalt } = createSrtpKeysFromPassphrase('your-secure-passphrase');
+const { masterKey, masterSalt } = createSrtpKeysFromPassphrase(
+  "your-secure-passphrase",
+);
 
 // Stream directly to a remote endpoint using SRTP
 const transport = processAIStreamToSrtp(
   stream,
-  '192.168.1.100',  // Remote IP address
+  "192.168.1.100", // Remote IP address
   {
-    masterKey,      // SRTP master key
-    masterSalt,     // SRTP master salt
-    payloadType: 96 // T.140 payload type (optional)
+    masterKey, // SRTP master key
+    masterSalt, // SRTP master salt
+    payloadType: 96, // T.140 payload type (optional)
   },
-  5006              // SRTP port (optional, default: 5006)
+  5006, // SRTP port (optional, default: 5006)
 );
 
 // Later, you can close the transport if needed
 // transport.close();
 ```
+
+## Why?
+
+The T.140 protocol is a well-defined standard for transmitting text conversations
+over IP networks in real-time, making it an effective way to transmit text as
+it is being written to satelites, noisy environments, and environments where
+low latency transmission is a requirement. Unlike other approaches, the T.140
+standard enables transmission of text before the entire message has been both
+composed and sent.
+
+Because LLMs do not make mistakes while "typing," there is no true downside to
+using such an approach for transmitting the data they output. Using T.140 you
+can both reduce the overall file size of packets being delivered, and improve
+your quality of experience when latency is a particularly sensitive measurement.
 
 ## How It Works
 
@@ -308,6 +324,7 @@ Closes the UDP socket and cleans up resources.
 [MIT License](https://mit-license.org/) © agrathwohl
 
 <!-- References -->
+
 [typescript-url]: https://github.com/Microsoft/TypeScript
 [nodejs-url]: https://nodejs.org
 [npm-url]: https://www.npmjs.com
@@ -315,11 +332,12 @@ Closes the UDP socket and cleans up resources.
 [mit-license-url]: https://github.com/agrathwohl/t140llm/blob/master/LICENSE
 
 <!-- MDN -->
+
 [string-mdn-url]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String
 [number-mdn-url]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number
 [promise-mdn-url]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise
 
 <!-- Badges -->
+
 [node-version-badge]: https://flat.badgen.net/npm/node/t140llm
 [mit-license-badge]: https://flat.badgen.net/npm/license/t140llm
-
