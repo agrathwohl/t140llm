@@ -1,19 +1,19 @@
-import * as dgram from 'dgram';
-import type { EventEmitter } from 'events';
-import * as net from 'net';
-import WebSocket from 'ws';
+import * as dgram from "dgram";
+import type { EventEmitter } from "events";
+import * as net from "net";
+import WebSocket from "ws";
 
 // Import werift-rtp using require to avoid TypeScript errors
 // @ts-ignore
 // tslint:disable-next-line:no-var-requires
-const weriftRtp = require('werift-rtp');
+const weriftRtp = require("werift-rtp");
 const { SrtpSession, SrtpPolicy, SrtpContext } = weriftRtp;
 
 // WebSocket server address and port
 const WS_SERVER_PORT = 8765;
 
 // Unix SEQPACKET socket path
-const SEQPACKET_SOCKET_PATH = '/tmp/seqpacket_socket';
+const SEQPACKET_SOCKET_PATH = "/tmp/seqpacket_socket";
 
 // RTP/SRTP defaults
 const RTP_HEADER_SIZE = 12;
@@ -21,15 +21,16 @@ const DEFAULT_RTP_PORT = 5004;
 const DEFAULT_SRTP_PORT = 5006;
 const DEFAULT_T140_PAYLOAD_TYPE = 96;
 const DEFAULT_SSRC = 12345;
+const DEFAULT_RED_PAYLOAD_TYPE = 98; // RED payload type for T.140 redundancy
 
 // T.140 constants
-const BACKSPACE = '\u0008';  // ASCII backspace character (BS)
+const BACKSPACE = "\u0008"; // ASCII backspace character (BS)
 
 // Interface for any streaming data source
 interface TextDataStream extends EventEmitter {
-  on(event: 'data', listener: (data: any) => void): this;
-  on(event: 'end', listener: () => void): this;
-  on(event: 'error', listener: (error: Error) => void): this;
+  on(event: "data", listener: (data: any) => void): this;
+  on(event: "end", listener: () => void): this;
+  on(event: "error", listener: (error: Error) => void): this;
 }
 
 // Interface for RTP/SRTP configuration
@@ -43,6 +44,10 @@ interface RtpConfig {
   fecPayloadType?: number;
   fecGroupSize?: number; // Number of packets to protect with a single FEC packet
   processBackspaces?: boolean; // Enable T.140 backspace character processing
+  charRateLimit?: number; // Character rate limit in characters per second
+  redEnabled?: boolean; // Enable redundancy for T.140
+  redPayloadType?: number; // Payload type for RED encoding
+  redundancyLevel?: number; // Number of redundant T.140 blocks to include
 }
 
 // Interface for SRTP specific configuration
@@ -62,7 +67,7 @@ function createRtpPacket(
   sequenceNumber: number,
   timestamp: number,
   payload: string,
-  options: Partial<RtpConfig> = {}
+  options: Partial<RtpConfig> = {},
 ): Buffer {
   const version = 2;
   const padding = 0;
@@ -76,14 +81,14 @@ function createRtpPacket(
   // Use a different approach to avoid bitwise operations
   rtpHeader.writeUInt8(
     version * 64 + padding * 32 + extension * 16 + csrcCount,
-    0
+    0,
   );
   rtpHeader.writeUInt8(marker * 128 + payloadType, 1);
   rtpHeader.writeUInt16BE(sequenceNumber, 2);
   rtpHeader.writeUInt32BE(timestamp, 4);
   rtpHeader.writeUInt32BE(ssrc, 8);
 
-  const payloadBuffer = Buffer.from(payload, 'utf-8');
+  const payloadBuffer = Buffer.from(payload, "utf-8");
   return Buffer.concat([rtpHeader, payloadBuffer]);
 }
 
@@ -105,15 +110,15 @@ function extractTextFromChunk(chunk: any): string {
     return chunk.content[0].text;
   }
   // Handle simple string format
-  if (typeof chunk === 'string') {
+  if (typeof chunk === "string") {
     return chunk;
   }
   // Handle other object with toString
-  if (chunk && typeof chunk.toString === 'function') {
+  if (chunk && typeof chunk.toString === "function") {
     return chunk.toString();
   }
 
-  return '';
+  return "";
 }
 
 /**
@@ -131,11 +136,12 @@ class T140RtpTransport {
   private packetSequenceNumbers: number[] = []; // Sequence numbers for FEC packets
   private packetTimestamps: number[] = []; // Timestamps for FEC packets
   private fecCounter: number = 0; // Counter for tracking when to send FEC packets
+  private redPackets: Buffer[] = []; // Buffer to store packets for T.140 redundancy
 
   constructor(
     remoteAddress: string,
     remotePort: number = DEFAULT_RTP_PORT,
-    config: RtpConfig = {}
+    config: RtpConfig = {},
   ) {
     this.remoteAddress = remoteAddress;
     this.remotePort = remotePort;
@@ -148,13 +154,17 @@ class T140RtpTransport {
       fecEnabled: config.fecEnabled || false,
       fecPayloadType: config.fecPayloadType || 97, // Default payload type for FEC
       fecGroupSize: config.fecGroupSize || 5, // Default: protect every 5 packets with 1 FEC packet
+      charRateLimit: config.charRateLimit || 0, // 0 means no rate limit
+      redEnabled: config.redEnabled || false, // Redundancy disabled by default
+      redPayloadType: config.redPayloadType || DEFAULT_RED_PAYLOAD_TYPE,
+      redundancyLevel: config.redundancyLevel || 2, // Default: 2 redundant blocks
     };
 
     this.seqNum = this.config.initialSequenceNumber!;
     this.timestamp = this.config.initialTimestamp!;
 
     // Create UDP socket
-    this.udpSocket = dgram.createSocket('udp4');
+    this.udpSocket = dgram.createSocket("udp4");
   }
 
   /**
@@ -184,7 +194,7 @@ class T140RtpTransport {
   private _createFecPacket(
     packets: Buffer[],
     sequenceNumbers: number[],
-    timestamps: number[]
+    timestamps: number[],
   ): Buffer {
     if (packets.length === 0) {
       return Buffer.alloc(0);
@@ -207,7 +217,10 @@ class T140RtpTransport {
 
     // Create the FEC RTP header
     const fecHeader = Buffer.alloc(RTP_HEADER_SIZE);
-    fecHeader.writeUInt8(version * 64 + padding * 32 + extension * 16 + csrcCount, 0);
+    fecHeader.writeUInt8(
+      version * 64 + padding * 32 + extension * 16 + csrcCount,
+      0,
+    );
     fecHeader.writeUInt8(marker * 128 + payloadType, 1);
     fecHeader.writeUInt16BE(fecSeqNum, 2);
     fecHeader.writeUInt32BE(fecTimestamp, 4);
@@ -244,14 +257,16 @@ class T140RtpTransport {
     // Now create the FEC payload
     // This requires XORing the payloads of all protected packets
     // First, find the largest packet to determine payload size
-    const maxPayloadLength = Math.max(...packets.map(p => p.length - RTP_HEADER_SIZE));
+    const maxPayloadLength = Math.max(
+      ...packets.map((p) => p.length - RTP_HEADER_SIZE),
+    );
     const fecPayload = Buffer.alloc(maxPayloadLength);
 
     // XOR all payloads together
     for (const packet of packets) {
       const payloadOffset = RTP_HEADER_SIZE;
       const payloadLength = packet.length - payloadOffset;
-      for (let j = 0; j < payloadLength; j += 1) {
+      for (let j = 0; j < payloadLength; j = j + 1) {
         // XOR byte-by-byte
         if (j < fecPayload.length) {
           // Use a non-bitwise approach
@@ -267,41 +282,183 @@ class T140RtpTransport {
   }
 
   /**
+   * Create a RED packet with redundancy according to RFC 2198
+   */
+  private _createRedPacket(
+    primaryData: string,
+    redundantPackets: Buffer[],
+  ): Buffer {
+    if (!this.config.redEnabled || redundantPackets.length === 0) {
+      // If RED is not enabled or no redundant packets available,
+      // just create a normal RTP packet
+      return createRtpPacket(this.seqNum, this.timestamp, primaryData, {
+        payloadType: this.config.payloadType,
+        ssrc: this.config.ssrc,
+      });
+    }
+
+    // Determine how many redundant packets to include
+    // Limited by available packets and configured redundancy level
+    const redundancyLevel = Math.min(
+      redundantPackets.length,
+      this.config.redundancyLevel || 2,
+    );
+
+    // Start with RTP header
+    const rtpHeader = Buffer.alloc(RTP_HEADER_SIZE);
+    const version = 2;
+    const padding = 0;
+    const extension = 0;
+    const csrcCount = 0;
+    const marker = 0;
+    const payloadType = this.config.redPayloadType!;
+    const ssrc = this.config.ssrc!;
+
+    // Create RTP header
+    rtpHeader.writeUInt8(
+      version * 64 + padding * 32 + extension * 16 + csrcCount,
+      0,
+    );
+    rtpHeader.writeUInt8(marker * 128 + payloadType, 1);
+    rtpHeader.writeUInt16BE(this.seqNum, 2);
+    rtpHeader.writeUInt32BE(this.timestamp, 4);
+    rtpHeader.writeUInt32BE(ssrc, 8);
+
+    // Create RED headers and payloads
+    // Format for each redundant block:
+    // 1 byte: F(1) + Block PT(7)
+    // 2 bytes: Timestamp offset (uint16)
+    // 1 byte: Block length (uint8)
+    // For the primary data (last block):
+    // 1 byte: F(0) + Block PT(7)
+
+    // 4 bytes per redundant block + 1 for primary
+    const redHeaders = Buffer.alloc(redundancyLevel * 4 + 1);
+    let offset = 0;
+
+    // Add headers for redundant blocks
+    for (let i = 0; i < redundancyLevel; i = i + 1) {
+      // Get the packet to include as redundant data
+      // Most recent redundant packet first
+      const packet = redundantPackets[redundantPackets.length - 1 - i];
+
+      // Calculate timestamp offset (primary timestamp - redundant timestamp)
+      // We need to extract the timestamp from the RTP header (bytes 4-7)
+      const redPacketTimestamp = packet.readUInt32BE(4);
+      // 16-bit value using modulo instead of bitwise AND
+      const timestampOffset = (this.timestamp - redPacketTimestamp) % 65536;
+
+      // Calculate payload length (packet length - RTP header size)
+      const payloadLength = Math.min(packet.length - RTP_HEADER_SIZE, 255); // Max 8 bits
+
+      // Write RED header for this block
+      // F bit = 1 (more blocks follow)
+      // Use 128 (0x80) + PT instead of bitwise OR
+      redHeaders.writeUInt8(128 + this.config.payloadType!, offset); // F=1 + block PT
+      redHeaders.writeUInt16BE(timestampOffset, offset + 1); // Timestamp offset
+      redHeaders.writeUInt8(payloadLength, offset + 3); // Block length
+      offset = offset + 4;
+    }
+
+    // Add header for primary data (F bit = 0, no timestamp offset, no length)
+    redHeaders.writeUInt8(this.config.payloadType!, offset); // F=0 + block PT
+
+    // Create primary data payload
+    const primaryPayload = Buffer.from(primaryData, "utf-8");
+
+    // Combine all parts: RTP header + RED headers + redundant payloads + primary payload
+    const buffers = [rtpHeader, redHeaders];
+
+    // Add redundant payloads (skipping their RTP headers)
+    for (let i = 0; i < redundancyLevel; i = i + 1) {
+      const packet = redundantPackets[redundantPackets.length - 1 - i];
+      const payload = packet.slice(RTP_HEADER_SIZE);
+      buffers.push(payload);
+    }
+
+    // Add primary payload
+    buffers.push(primaryPayload);
+
+    // Combine all buffers
+    return Buffer.concat(buffers);
+  }
+
+  /**
    * Send text data as T.140 over RTP or SRTP
    */
   sendText(text: string): void {
-    // Create RTP packet
-    const rtpPacket = createRtpPacket(this.seqNum, this.timestamp, text, {
-      payloadType: this.config.payloadType,
-      ssrc: this.config.ssrc,
-    });
+    // Check if we should use RED (redundancy) encoding
+    let packet: Buffer;
+    if (this.config.redEnabled && this.redPackets.length > 0) {
+      // Create a RED packet with redundancy
+      const redPacket = this._createRedPacket(text, this.redPackets);
+
+      // Store the packet for future redundancy use
+      const normalPacket = createRtpPacket(this.seqNum, this.timestamp, text, {
+        payloadType: this.config.payloadType,
+        ssrc: this.config.ssrc,
+      });
+
+      // Keep original non-RED packet for redundancy
+      this.redPackets.push(Buffer.from(normalPacket));
+
+      // Limit the number of stored packets
+      if (this.redPackets.length > this.config.redundancyLevel!) {
+        this.redPackets.shift(); // Remove oldest packet
+      }
+
+      packet = redPacket;
+    } else {
+      // Create normal RTP packet
+      const rtpPacket = createRtpPacket(this.seqNum, this.timestamp, text, {
+        payloadType: this.config.payloadType,
+        ssrc: this.config.ssrc,
+      });
+
+      // Store for future redundancy use if RED is enabled
+      if (this.config.redEnabled) {
+        this.redPackets.push(Buffer.from(rtpPacket));
+
+        // Limit the number of stored packets
+        if (this.redPackets.length > this.config.redundancyLevel!) {
+          this.redPackets.shift(); // Remove oldest packet
+        }
+      }
+
+      packet = rtpPacket;
+    }
 
     // Encrypt the packet if using SRTP
-    let packet: Buffer;
+    let finalPacket: Buffer;
     if (this.srtpSession) {
       // Use the typed protect method
-      packet = this.srtpSession.protect(rtpPacket);
+      finalPacket = this.srtpSession.protect(packet);
     } else {
-      packet = rtpPacket;
+      finalPacket = packet;
     }
 
     // Send the packet
     this.udpSocket.send(
-      packet,
+      finalPacket,
       0,
-      packet.length,
+      finalPacket.length,
       this.remotePort,
       this.remoteAddress,
       (err) => {
         if (err) {
-          console.error('Error sending RTP packet:', err);
+          console.error("Error sending RTP packet:", err);
         }
-      }
+      },
     );
 
     // If FEC is enabled, add this packet to the buffer for FEC calculation
     if (this.config.fecEnabled) {
-      // Store original packet for FEC
+      // Store original packet for FEC (non-RED packet for simplicity)
+      const rtpPacket = createRtpPacket(this.seqNum, this.timestamp, text, {
+        payloadType: this.config.payloadType,
+        ssrc: this.config.ssrc,
+      });
+
       this.packetBuffer.push(Buffer.from(rtpPacket)); // Make a copy of the packet
       this.packetSequenceNumbers.push(this.seqNum);
       this.packetTimestamps.push(this.timestamp);
@@ -313,7 +470,7 @@ class T140RtpTransport {
         const fecPacket = this._createFecPacket(
           this.packetBuffer,
           this.packetSequenceNumbers,
-          this.packetTimestamps
+          this.packetTimestamps,
         );
 
         // Only send if we have a valid FEC packet
@@ -335,9 +492,9 @@ class T140RtpTransport {
             this.remoteAddress,
             (err) => {
               if (err) {
-                console.error('Error sending FEC packet:', err);
+                console.error("Error sending FEC packet:", err);
               }
-            }
+            },
           );
         }
 
@@ -367,7 +524,7 @@ class T140RtpTransport {
     const fecPacket = this._createFecPacket(
       this.packetBuffer,
       this.packetSequenceNumbers,
-      this.packetTimestamps
+      this.packetTimestamps,
     );
 
     if (fecPacket.length > 0) {
@@ -388,9 +545,9 @@ class T140RtpTransport {
         this.remoteAddress,
         (err) => {
           if (err) {
-            console.error('Error sending final FEC packet:', err);
+            console.error("Error sending final FEC packet:", err);
           }
-        }
+        },
       );
     }
 
@@ -415,14 +572,14 @@ class T140RtpTransport {
 // Create WebSocket server
 const wss = new WebSocket.Server({ port: WS_SERVER_PORT });
 
-wss.on('connection', (ws) => {
+wss.on("connection", (ws) => {
   // Create Unix SEQPACKET socket
   const seqpacketSocket = net.createConnection(SEQPACKET_SOCKET_PATH);
 
   let sequenceNumber = 0;
   let timestamp = 0;
 
-  ws.on('message', (message: string) => {
+  ws.on("message", (message: string) => {
     // Create RTP packet with T.140 payload
     const rtpPacket = createRtpPacket(sequenceNumber, timestamp, message);
     // Send RTP packet through Unix SEQPACKET socket
@@ -433,7 +590,7 @@ wss.on('connection', (ws) => {
     timestamp += 160; // Assuming 20ms per packet at 8kHz
   });
 
-  ws.on('close', () => {
+  ws.on("close", () => {
     seqpacketSocket.end();
   });
 });
@@ -444,25 +601,25 @@ wss.on('connection', (ws) => {
 function processAIStream(
   stream: TextDataStream,
   websocketUrl: string = `ws://localhost:${WS_SERVER_PORT}`,
-  options: { processBackspaces?: boolean } = {}
+  options: { processBackspaces?: boolean } = {},
 ): void {
   const ws = new WebSocket(websocketUrl);
-  let buffer = '';
+  let buffer = "";
   let isConnected = false;
-  let textBuffer = ''; // Buffer to track accumulated text for backspace handling
+  let textBuffer = ""; // Buffer to track accumulated text for backspace handling
   const processBackspaces = options.processBackspaces === true;
 
-  ws.on('open', () => {
+  ws.on("open", () => {
     isConnected = true;
     // Send any buffered content
     if (buffer) {
       ws.send(buffer);
-      buffer = '';
+      buffer = "";
     }
   });
 
   // Process the AI stream and send chunks through WebSocket
-  stream.on('data', (chunk) => {
+  stream.on("data", (chunk) => {
     // Extract the text content from the chunk
     const text = extractTextFromChunk(chunk);
     if (!text) return;
@@ -471,7 +628,10 @@ function processAIStream(
 
     if (processBackspaces) {
       // Process backspaces in the T.140 stream
-      const { processedText, updatedBuffer } = processT140BackspaceChars(text, textBuffer);
+      const { processedText, updatedBuffer } = processT140BackspaceChars(
+        text,
+        textBuffer,
+      );
       textBuffer = updatedBuffer;
       textToSend = processedText;
 
@@ -487,15 +647,15 @@ function processAIStream(
     }
   });
 
-  stream.on('end', () => {
+  stream.on("end", () => {
     // Close the WebSocket connection when stream ends
     if (isConnected) {
       ws.close();
     }
   });
 
-  stream.on('error', (err) => {
-    console.error('AI Stream error:', err);
+  stream.on("error", (err) => {
+    console.error("AI Stream error:", err);
     if (isConnected) {
       ws.close();
     }
@@ -504,45 +664,95 @@ function processAIStream(
 
 /**
  * Process an AI stream and send chunks directly as T.140 over RTP
+ * with rate limiting to ensure compliance with specified character rate limits
  */
 function processAIStreamToRtp(
   stream: TextDataStream,
   remoteAddress: string,
   remotePort: number = DEFAULT_RTP_PORT,
-  rtpConfig: RtpConfig = {}
+  rtpConfig: RtpConfig = {},
 ): T140RtpTransport {
   const transport = new T140RtpTransport(remoteAddress, remotePort, rtpConfig);
-  let textBuffer = ''; // Buffer to track accumulated text for backspace handling
+  let textBuffer = ""; // Buffer to track accumulated text for backspace handling
   const processBackspaces = rtpConfig.processBackspaces === true;
 
-  // Process the AI stream and send chunks over RTP
-  stream.on('data', (chunk) => {
+  // Rate limiting configuration - default to 30 characters per second
+  const charRateLimit = rtpConfig.charRateLimit || 30; // characters per second
+  const charQueue: string[] = []; // Queue to store characters waiting to be sent
+  let lastSendTime = Date.now();
+  let tokenBucket = charRateLimit; // Initial tokens available (full bucket)
+  const tokenRefillRate = charRateLimit / 1000; // Tokens per millisecond
+
+  // Set up the rate limiting interval
+  const sendInterval = setInterval(() => {
+    // Refill the token bucket
+    const now = Date.now();
+    const elapsedMs = now - lastSendTime;
+    lastSendTime = now;
+
+    // Add tokens based on elapsed time
+    tokenBucket = Math.min(
+      charRateLimit,
+      tokenBucket + elapsedMs * tokenRefillRate,
+    );
+
+    // If we have characters in the queue and tokens available, send them
+    while (charQueue.length > 0 && tokenBucket >= 1) {
+      const charsToSend = Math.min(Math.floor(tokenBucket), charQueue.length);
+      const textChunk = charQueue.splice(0, charsToSend).join("");
+
+      if (textChunk) {
+        transport.sendText(textChunk);
+        tokenBucket = tokenBucket - textChunk.length;
+      }
+    }
+  }, 100); // Check every 100ms
+
+  // Process the AI stream and add chunks to the rate-limited queue
+  stream.on("data", (chunk) => {
     // Extract the text content from the chunk
     const text = extractTextFromChunk(chunk);
     if (!text) return;
 
     if (processBackspaces) {
       // Process backspaces in the T.140 stream
-      const { processedText, updatedBuffer } = processT140BackspaceChars(text, textBuffer);
+      const { processedText, updatedBuffer } = processT140BackspaceChars(
+        text,
+        textBuffer,
+      );
       textBuffer = updatedBuffer;
 
-      // Only send if there's something to send
+      // Only queue if there's something to send
       if (processedText) {
-        transport.sendText(processedText);
+        // Add each character to the queue for rate limiting
+        for (const char of processedText) {
+          charQueue.push(char);
+        }
       }
     } else {
-      // Send text directly without backspace processing
-      transport.sendText(text);
+      // Add each character to the queue for rate limiting
+      for (const char of text) {
+        charQueue.push(char);
+      }
     }
   });
 
-  stream.on('end', () => {
+  stream.on("end", () => {
+    // Clear the send interval
+    clearInterval(sendInterval);
+
+    // Send any remaining characters in the queue
+    if (charQueue.length > 0) {
+      transport.sendText(charQueue.join(""));
+    }
+
     // Close the transport when stream ends
     transport.close();
   });
 
-  stream.on('error', (err) => {
-    console.error('AI Stream error:', err);
+  stream.on("error", (err) => {
+    console.error("AI Stream error:", err);
+    clearInterval(sendInterval);
     transport.close();
   });
 
@@ -556,25 +766,28 @@ function processAIStreamToSrtp(
   stream: TextDataStream,
   remoteAddress: string,
   srtpConfig: SrtpConfig,
-  remotePort: number = DEFAULT_SRTP_PORT
+  remotePort: number = DEFAULT_SRTP_PORT,
 ): T140RtpTransport {
   // Create transport
   const transport = new T140RtpTransport(remoteAddress, remotePort, srtpConfig);
-  let textBuffer = ''; // Buffer to track accumulated text for backspace handling
+  let textBuffer = ""; // Buffer to track accumulated text for backspace handling
   const processBackspaces = srtpConfig.processBackspaces === true;
 
   // Setup SRTP
   transport.setupSrtp(srtpConfig);
 
   // Process the AI stream and send chunks over SRTP
-  stream.on('data', (chunk) => {
+  stream.on("data", (chunk) => {
     // Extract the text content from the chunk
     const text = extractTextFromChunk(chunk);
     if (!text) return;
 
     if (processBackspaces) {
       // Process backspaces in the T.140 stream
-      const { processedText, updatedBuffer } = processT140BackspaceChars(text, textBuffer);
+      const { processedText, updatedBuffer } = processT140BackspaceChars(
+        text,
+        textBuffer,
+      );
       textBuffer = updatedBuffer;
 
       // Only send if there's something to send
@@ -587,13 +800,13 @@ function processAIStreamToSrtp(
     }
   });
 
-  stream.on('end', () => {
+  stream.on("end", () => {
     // Close the transport when stream ends
     transport.close();
   });
 
-  stream.on('error', (err) => {
-    console.error('AI Stream error:', err);
+  stream.on("error", (err) => {
+    console.error("AI Stream error:", err);
     transport.close();
   });
 
@@ -607,7 +820,7 @@ function processAIStreamToSrtp(
 function processAIStreamToDirectSocket(
   stream: TextDataStream,
   socketPath: string = SEQPACKET_SOCKET_PATH,
-  rtpConfig: RtpConfig = {}
+  rtpConfig: RtpConfig = {},
 ): net.Socket {
   // Create Unix SEQPACKET socket
   const seqpacketSocket = net.createConnection(socketPath);
@@ -618,11 +831,11 @@ function processAIStreamToDirectSocket(
   const timestampIncrement = rtpConfig.timestampIncrement || 160;
   const payloadType = rtpConfig.payloadType || DEFAULT_T140_PAYLOAD_TYPE;
   const ssrc = rtpConfig.ssrc || DEFAULT_SSRC;
-  let textBuffer = ''; // Buffer to track accumulated text for backspace handling
+  let textBuffer = ""; // Buffer to track accumulated text for backspace handling
   const processBackspaces = rtpConfig.processBackspaces === true;
 
   // Process the AI stream and send chunks directly to the socket
-  stream.on('data', (chunk) => {
+  stream.on("data", (chunk) => {
     // Extract the text content from the chunk
     const text = extractTextFromChunk(chunk);
     if (!text) return;
@@ -631,7 +844,10 @@ function processAIStreamToDirectSocket(
 
     if (processBackspaces) {
       // Process backspaces in the T.140 stream
-      const { processedText, updatedBuffer } = processT140BackspaceChars(text, textBuffer);
+      const { processedText, updatedBuffer } = processT140BackspaceChars(
+        text,
+        textBuffer,
+      );
       textBuffer = updatedBuffer;
       textToSend = processedText;
 
@@ -653,13 +869,13 @@ function processAIStreamToDirectSocket(
     timestamp += timestampIncrement;
   });
 
-  stream.on('end', () => {
+  stream.on("end", () => {
     // Close the socket when stream ends
     seqpacketSocket.end();
   });
 
-  stream.on('error', (err) => {
-    console.error('AI Stream error:', err);
+  stream.on("error", (err) => {
+    console.error("AI Stream error:", err);
     seqpacketSocket.end();
   });
 
@@ -669,9 +885,10 @@ function processAIStreamToDirectSocket(
 /**
  * Helper function to create SRTP key and salt from a passphrase
  */
-function createSrtpKeysFromPassphrase(
-  passphrase: string
-): { masterKey: Buffer; masterSalt: Buffer } {
+function createSrtpKeysFromPassphrase(passphrase: string): {
+  masterKey: Buffer;
+  masterSalt: Buffer;
+} {
   // Simple implementation - in production, use a more secure key derivation
   const passphraseBuffer = Buffer.from(passphrase);
   const masterKey = Buffer.alloc(16); // 128 bits
@@ -683,7 +900,8 @@ function createSrtpKeysFromPassphrase(
   }
 
   for (let i = 0; i < masterSalt.length; i += 1) {
-    masterSalt[i] = passphraseBuffer[(i + masterKey.length) % passphraseBuffer.length];
+    masterSalt[i] =
+      passphraseBuffer[(i + masterKey.length) % passphraseBuffer.length];
   }
 
   return { masterKey, masterSalt };
@@ -702,13 +920,16 @@ interface T140BackspaceResult {
   updatedBuffer: string;
 }
 
-function processT140BackspaceChars(text: string, textBuffer: string = ''): T140BackspaceResult {
-  if (!text.includes(BACKSPACE) && textBuffer === '') {
+function processT140BackspaceChars(
+  text: string,
+  textBuffer: string = "",
+): T140BackspaceResult {
+  if (!text.includes(BACKSPACE) && textBuffer === "") {
     // Fast path: if there are no backspaces and no buffer, just return the text as is
-    return { processedText: text, updatedBuffer: '' };
+    return { processedText: text, updatedBuffer: "" };
   }
 
-  let processedText = '';
+  let processedText = "";
   let updatedBuffer = textBuffer;
   let currentPos = 0;
 
