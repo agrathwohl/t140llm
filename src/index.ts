@@ -554,6 +554,58 @@ function processAIStreamToSrtp(
 }
 
 /**
+ * Process an AI stream and send chunks as RTP directly to a SEQPACKET socket
+ * This is the "direct socket mode" which bypasses WebSocket but still uses RTP encapsulation
+ */
+function processAIStreamToDirectSocket(
+  stream: TextDataStream,
+  socketPath: string = SEQPACKET_SOCKET_PATH,
+  rtpConfig: RtpConfig = {}
+): net.Socket {
+  // Create Unix SEQPACKET socket
+  const seqpacketSocket = net.createConnection(socketPath);
+
+  // Initialize RTP parameters
+  let sequenceNumber = rtpConfig.initialSequenceNumber || 0;
+  let timestamp = rtpConfig.initialTimestamp || 0;
+  const timestampIncrement = rtpConfig.timestampIncrement || 160;
+  const payloadType = rtpConfig.payloadType || DEFAULT_T140_PAYLOAD_TYPE;
+  const ssrc = rtpConfig.ssrc || DEFAULT_SSRC;
+
+  // Process the AI stream and send chunks directly to the socket
+  stream.on('data', (chunk) => {
+    // Extract the text content from the chunk
+    const text = extractTextFromChunk(chunk);
+    if (!text) return;
+
+    // Still create RTP packet for T.140
+    const rtpPacket = createRtpPacket(sequenceNumber, timestamp, text, {
+      payloadType,
+      ssrc,
+    });
+
+    // Send directly to the SEQPACKET socket without WebSocket intermediary
+    seqpacketSocket.write(rtpPacket);
+
+    // Update sequence number and timestamp for next packet
+    sequenceNumber = (sequenceNumber + 1) % 65536;
+    timestamp += timestampIncrement;
+  });
+
+  stream.on('end', () => {
+    // Close the socket when stream ends
+    seqpacketSocket.end();
+  });
+
+  stream.on('error', (err) => {
+    console.error('AI Stream error:', err);
+    seqpacketSocket.end();
+  });
+
+  return seqpacketSocket;
+}
+
+/**
  * Helper function to create SRTP key and salt from a passphrase
  */
 function createSrtpKeysFromPassphrase(
@@ -585,6 +637,9 @@ export {
   processAIStream,
   processAIStreamToRtp,
   processAIStreamToSrtp,
+  processAIStreamToDirectSocket,
   createSrtpKeysFromPassphrase,
-  T140RtpTransport
+  T140RtpTransport,
+  // Export for testing purposes only
+  extractTextFromChunk,
 };

@@ -10,6 +10,7 @@ This script demonstrates sending text streams through different transport mechan
 - WebSocket
 - RTP (Real-time Transport Protocol)
 - SRTP (Secure Real-time Transport Protocol)
+- Direct Socket Mode (bypasses WebSocket but still uses RTP)
 - Direct UDP (for comparison)
 
 It also includes a performance comparison between the library and direct transmission.
@@ -29,6 +30,14 @@ This script demonstrates the Forward Error Correction (FEC) feature according to
 - Simulates packet loss to demonstrate recovery capabilities
 - Provides statistics on packet loss and recovery rates
 - Includes a manual demonstration with step-by-step packet transmission
+
+### 4. Direct Socket Mode Example (`direct_socket_example.js`)
+
+This script demonstrates the direct socket mode, which bypasses WebSocket but still uses RTP:
+- Sends T.140 data directly to a SEQPACKET socket
+- Maintains RTP encapsulation for compatibility
+- Eliminates WebSocket overhead for local systems
+- Provides an example of configuring RTP parameters for direct socket transmission
 
 ## Running the Examples
 
@@ -57,6 +66,29 @@ The FEC demo is self-contained and includes both sender and receiver components:
 node examples/fec_demo.js
 ```
 
+### Direct Socket Mode Demo
+
+For the direct socket mode demo, you need to set up a SEQPACKET socket listener first:
+
+1. **Install socat if not already available:**
+```
+sudo apt-get install socat  # For Debian/Ubuntu
+# or
+brew install socat  # For macOS
+```
+
+2. **In one terminal, start the SEQPACKET socket listener:**
+```
+socat -u UNIX-LISTEN:/tmp/seqpacket_socket,type=seqpacket STDIO
+```
+
+3. **In another terminal, run the direct socket example:**
+```
+node examples/direct_socket_example.js
+```
+
+You should see the received T.140 RTP packets in the first terminal.
+
 ## Expected Output
 
 When running both scripts, you'll see:
@@ -72,6 +104,7 @@ When running both scripts, you'll see:
 - SRTP encryption for secure transmission
 - Forward Error Correction (FEC) according to RFC 5109
 - WebSocket transport
+- Direct Socket Mode (local SEQPACKET socket with RTP)
 - Performance comparison with direct transmission
 - Support for AI stream formats from various providers
 
