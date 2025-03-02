@@ -474,7 +474,7 @@ function processAIStream(
       const { processedText, updatedBuffer } = processT140BackspaceChars(text, textBuffer);
       textBuffer = updatedBuffer;
       textToSend = processedText;
-      
+
       // Skip if nothing to send
       if (!textToSend) return;
     }
@@ -525,7 +525,7 @@ function processAIStreamToRtp(
       // Process backspaces in the T.140 stream
       const { processedText, updatedBuffer } = processT140BackspaceChars(text, textBuffer);
       textBuffer = updatedBuffer;
-      
+
       // Only send if there's something to send
       if (processedText) {
         transport.sendText(processedText);
@@ -576,7 +576,7 @@ function processAIStreamToSrtp(
       // Process backspaces in the T.140 stream
       const { processedText, updatedBuffer } = processT140BackspaceChars(text, textBuffer);
       textBuffer = updatedBuffer;
-      
+
       // Only send if there's something to send
       if (processedText) {
         transport.sendText(processedText);
@@ -634,7 +634,7 @@ function processAIStreamToDirectSocket(
       const { processedText, updatedBuffer } = processT140BackspaceChars(text, textBuffer);
       textBuffer = updatedBuffer;
       textToSend = processedText;
-      
+
       // Skip if nothing to send
       if (!textToSend) return;
     }
@@ -697,7 +697,12 @@ console.log(`WebSocket server is running on ws://localhost:${WS_SERVER_PORT}`);
  * @param textBuffer Optional existing text buffer to apply backspaces to
  * @returns Object containing the processed text ready for sending and updated buffer state
  */
-function processT140BackspaceChars(text: string, textBuffer: string = ''): { processedText: string, updatedBuffer: string } {
+interface T140BackspaceResult {
+  processedText: string;
+  updatedBuffer: string;
+}
+
+function processT140BackspaceChars(text: string, textBuffer: string = ''): T140BackspaceResult {
   if (!text.includes(BACKSPACE) && textBuffer === '') {
     // Fast path: if there are no backspaces and no buffer, just return the text as is
     return { processedText: text, updatedBuffer: '' };
@@ -710,7 +715,7 @@ function processT140BackspaceChars(text: string, textBuffer: string = ''): { pro
   // Process each character in the input text
   while (currentPos < text.length) {
     const char = text[currentPos];
-    
+
     if (char === BACKSPACE) {
       // Handle backspace by removing the last character from the buffer
       if (updatedBuffer.length > 0) {
@@ -724,8 +729,7 @@ function processT140BackspaceChars(text: string, textBuffer: string = ''): { pro
       updatedBuffer += char;
       processedText += char;
     }
-    
-    currentPos++;
+    currentPos += 1;
   }
 
   return { processedText, updatedBuffer };
