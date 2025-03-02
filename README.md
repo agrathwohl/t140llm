@@ -1,4 +1,7 @@
 <div align="center" style="text-align: center;">
+  
+  ![T140LLM](logo.gif)
+
   <h1 style="border-bottom: none;">t140llm</h1>
 
   <p>A TypeScript library to convert LLM streaming responses into T.140 real-time text format for WebRTC and (S)RTP applications</p>
