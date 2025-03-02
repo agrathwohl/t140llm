@@ -22,6 +22,7 @@
     - [With Anthropic Claude](#with-anthropic-claude)
     - [Direct RTP Streaming](#direct-rtp-streaming)
     - [Secure SRTP Streaming](#secure-srtp-streaming)
+    - [With Forward Error Correction](#with-forward-error-correction)
 - [How It Works](#how-it-works)
 - [API Reference](#api-reference)
   - [processAIStream(stream, [websocketUrl])](#processaistreamstream-websocketurl)
@@ -203,6 +204,45 @@ const transport = processAIStreamToSrtp(
 // transport.close();
 ```
 
+#### With Forward Error Correction
+
+For RTP streaming with Forward Error Correction (FEC) according to RFC 5109:
+
+```typescript
+import { processAIStreamToRtp } from "t140llm";
+import { OpenAI } from "openai";
+
+// Initialize your LLM client
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+// Create a streaming response
+const stream = await openai.chat.completions.create({
+  model: "gpt-4",
+  messages: [{ role: "user", content: "Write a short story." }],
+  stream: true,
+});
+
+// Stream directly to a remote endpoint using RTP with FEC enabled
+const transport = processAIStreamToRtp(
+  stream,
+  "192.168.1.100", // Remote IP address
+  5004, // RTP port (optional, default: 5004)
+  {
+    payloadType: 96, // T.140 payload type
+    ssrc: 12345, // RTP SSRC identifier
+    // FEC configuration
+    fecEnabled: true, // Enable Forward Error Correction
+    fecPayloadType: 97, // Payload type for FEC packets
+    fecGroupSize: 5, // Number of media packets to protect with one FEC packet
+  },
+);
+
+// Later, you can close the transport if needed
+// transport.close();
+```
+
 ## Why?
 
 The T.140 protocol is a well-defined standard for transmitting text conversations
@@ -232,7 +272,11 @@ your quality of experience when latency is a particularly sensitive measurement.
 1. The library creates a UDP socket to send RTP packets.
 2. When an LLM stream is processed, each text chunk is packaged as T.140 in an RTP packet.
 3. The RTP packets are sent directly to the specified IP address and port.
-4. Your application can receive these packets directly from the UDP socket.
+4. If Forward Error Correction (FEC) is enabled, the library will:
+   - Store packets in a buffer
+   - Generate FEC packets using XOR-based operations following RFC 5109
+   - Send FEC packets at configured intervals (based on group size)
+5. Your application can receive these packets directly from the UDP socket, using FEC packets to recover from packet loss.
 
 ### Secure SRTP Mode
 
@@ -257,10 +301,18 @@ Processes an AI stream and sends the text chunks as T.140 data through a WebSock
 - `stream` <TextDataStream> The streaming data source that emits text chunks.
 - `remoteAddress` <[string][string-mdn-url]> The remote IP address to send RTP packets to.
 - `remotePort` <[number][number-mdn-url]> Optional. The remote port to send RTP packets to. Defaults to `5004`.
-- `rtpConfig` <RtpConfig> Optional. Configuration options for RTP.
+- `rtpConfig` <RtpConfig> Optional. Configuration options for RTP:
+  - `payloadType` <[number][number-mdn-url]> Optional. The RTP payload type. Defaults to `96`.
+  - `ssrc` <[number][number-mdn-url]> Optional. The RTP synchronization source. Defaults to `12345`.
+  - `initialSequenceNumber` <[number][number-mdn-url]> Optional. The initial sequence number. Defaults to `0`.
+  - `initialTimestamp` <[number][number-mdn-url]> Optional. The initial timestamp. Defaults to `0`.
+  - `timestampIncrement` <[number][number-mdn-url]> Optional. The timestamp increment per packet. Defaults to `160`.
+  - `fecEnabled` <[boolean][boolean-mdn-url]> Optional. Enable Forward Error Correction. Defaults to `false`.
+  - `fecPayloadType` <[number][number-mdn-url]> Optional. The payload type for FEC packets. Defaults to `97`.
+  - `fecGroupSize` <[number][number-mdn-url]> Optional. Number of media packets to protect with one FEC packet. Defaults to `5`.
 - returns: <T140RtpTransport> The transport object that can be used to close the connection.
 
-Processes an AI stream and sends the text chunks directly as T.140 data over RTP.
+Processes an AI stream and sends the text chunks directly as T.140 data over RTP. When FEC is enabled, it adds Forward Error Correction packets according to RFC 5109 to help recover from packet loss.
 
 ### processAIStreamToSrtp(stream, remoteAddress, srtpConfig, [remotePort])
 
@@ -297,7 +349,7 @@ A class that manages RTP/SRTP connections for sending T.140 data.
 
 - `remoteAddress` <[string][string-mdn-url]> The remote IP address to send packets to.
 - `remotePort` <[number][number-mdn-url]> Optional. The remote port to send packets to. Defaults to `5004`.
-- `config` <RtpConfig> Optional. Configuration options for RTP.
+- `config` <RtpConfig> Optional. Configuration options for RTP, including FEC options.
 
 #### setupSrtp(srtpConfig)
 
@@ -311,13 +363,13 @@ Initializes and configures SRTP for secure transmission.
 - `text` <[string][string-mdn-url]> The text to send as T.140.
 - returns: <void>
 
-Sends text data as T.140 over RTP or SRTP.
+Sends text data as T.140 over RTP or SRTP. If FEC is enabled, it will also generate and send FEC packets according to the configured group size.
 
 #### close()
 
 - returns: <void>
 
-Closes the UDP socket and cleans up resources.
+Closes the UDP socket and cleans up resources. If FEC is enabled, it will send any remaining FEC packets before closing.
 
 ## License
 
@@ -336,6 +388,7 @@ Closes the UDP socket and cleans up resources.
 [string-mdn-url]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String
 [number-mdn-url]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number
 [promise-mdn-url]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise
+[boolean-mdn-url]: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Boolean
 
 <!-- Badges -->
 

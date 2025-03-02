@@ -21,7 +21,18 @@ This script shows how to receive the transmitted text streams:
 - Connects to the WebSocket server to receive WebSocket streams
 - Tracks and displays received data for each transport mechanism
 
+### 3. Forward Error Correction Demo (`fec_demo.js`)
+
+This script demonstrates the Forward Error Correction (FEC) feature according to RFC 5109:
+- Compares transmission with and without FEC enabled
+- Shows how to configure FEC parameters (payload type, group size)
+- Simulates packet loss to demonstrate recovery capabilities
+- Provides statistics on packet loss and recovery rates
+- Includes a manual demonstration with step-by-step packet transmission
+
 ## Running the Examples
+
+### Basic Demo
 
 1. **Build the library first:**
 ```
@@ -38,6 +49,14 @@ node examples/receiver.js
 node examples/demo.js
 ```
 
+### FEC Demo
+
+The FEC demo is self-contained and includes both sender and receiver components:
+
+```
+node examples/fec_demo.js
+```
+
 ## Expected Output
 
 When running both scripts, you'll see:
@@ -51,6 +70,7 @@ When running both scripts, you'll see:
 - T.140 real-time text transmission
 - RTP packet creation and sequencing
 - SRTP encryption for secure transmission
+- Forward Error Correction (FEC) according to RFC 5109
 - WebSocket transport
 - Performance comparison with direct transmission
 - Support for AI stream formats from various providers

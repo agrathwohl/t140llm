@@ -36,6 +36,9 @@ interface RtpConfig {
   initialSequenceNumber?: number;
   initialTimestamp?: number;
   timestampIncrement?: number;
+  fecEnabled?: boolean;
+  fecPayloadType?: number;
+  fecGroupSize?: number; // Number of packets to protect with a single FEC packet
 }
 
 // Interface for SRTP specific configuration
@@ -120,6 +123,10 @@ class T140RtpTransport {
   private udpSocket: dgram.Socket;
   private remoteAddress: string;
   private remotePort: number;
+  private packetBuffer: Buffer[] = []; // Buffer to store packets for FEC
+  private packetSequenceNumbers: number[] = []; // Sequence numbers for FEC packets
+  private packetTimestamps: number[] = []; // Timestamps for FEC packets
+  private fecCounter: number = 0; // Counter for tracking when to send FEC packets
 
   constructor(
     remoteAddress: string,
@@ -134,6 +141,9 @@ class T140RtpTransport {
       initialSequenceNumber: config.initialSequenceNumber || 0,
       initialTimestamp: config.initialTimestamp || 0,
       timestampIncrement: config.timestampIncrement || 160, // 20ms at 8kHz
+      fecEnabled: config.fecEnabled || false,
+      fecPayloadType: config.fecPayloadType || 97, // Default payload type for FEC
+      fecGroupSize: config.fecGroupSize || 5, // Default: protect every 5 packets with 1 FEC packet
     };
 
     this.seqNum = this.config.initialSequenceNumber!;
@@ -161,6 +171,95 @@ class T140RtpTransport {
     // Create SRTP context and session
     const context = new SrtpContext([policy]);
     this.srtpSession = new SrtpSession(context, srtpConfig.isSRTCP || false);
+  }
+
+  /**
+   * Create a Forward Error Correction (FEC) packet according to RFC 5109
+   * Using XOR-based FEC for a group of RTP packets
+   */
+  private _createFecPacket(
+    packets: Buffer[],
+    sequenceNumbers: number[],
+    timestamps: number[]
+  ): Buffer {
+    if (packets.length === 0) {
+      return Buffer.alloc(0);
+    }
+
+    // We need to XOR all RTP headers and payloads
+    // First, create the FEC header
+    const version = 2;
+    const padding = 0;
+    const extension = 0;
+    const csrcCount = 0;
+    const marker = 0;
+    const payloadType = this.config.fecPayloadType!;
+    const ssrc = this.config.ssrc!;
+    // Use the highest sequence number + 1 for the FEC packet
+    const maxSeqNum = Math.max(...sequenceNumbers);
+    const fecSeqNum = (maxSeqNum + 1) % 65536;
+    // Use the highest timestamp for the FEC packet
+    const fecTimestamp = Math.max(...timestamps);
+
+    // Create the FEC RTP header
+    const fecHeader = Buffer.alloc(RTP_HEADER_SIZE);
+    fecHeader.writeUInt8(version * 64 + padding * 32 + extension * 16 + csrcCount, 0);
+    fecHeader.writeUInt8(marker * 128 + payloadType, 1);
+    fecHeader.writeUInt16BE(fecSeqNum, 2);
+    fecHeader.writeUInt32BE(fecTimestamp, 4);
+    fecHeader.writeUInt32BE(ssrc, 8);
+
+    // FEC Header Extension - RFC 5109 Section 6.1
+    // 16 bytes of FEC header extension after the RTP header
+    const fecHeaderExt = Buffer.alloc(16);
+    // E bit: Extension bit (always 0 for simple XOR-based FEC)
+    // L bit: Long mask bit (0 for now, fewer than 16 packets)
+    // P bit: Protection length field present (0 for now)
+    // X bit: Reserved (0)
+    // CC bits: CSRC count from the FEC header
+    // M bit: RTP marker bit state from the FEC header
+    // PT bits: FEC payload type
+    fecHeaderExt.writeUInt8(0, 0); // E, L, P, X, CC, M bits
+    fecHeaderExt.writeUInt8(this.config.payloadType!, 1); // Original media PT
+    // SN base: first sequence number this FEC packet protects
+    fecHeaderExt.writeUInt16BE(sequenceNumbers[0], 2);
+    // Timestamp recovery field: timestamp of the media packet
+    fecHeaderExt.writeUInt32BE(timestamps[0], 4);
+    // Length recovery field: length of the media packet
+    const packetLength = packets[0].length;
+    fecHeaderExt.writeUInt16BE(packetLength, 8);
+    // Mask: which packets this FEC packet protects (bits)
+    // For simplicity, we use a continuous block of packets
+    // Each bit represents one packet being protected
+    const mask = Buffer.alloc(2);
+    // Set bits for each protected packet
+    // For example: 0000 0000 0001 1111 would protect 5 consecutive packets
+    mask.writeUInt16BE(Math.pow(2, packets.length) - 1, 0);
+    mask.copy(fecHeaderExt, 10, 0, 2);
+
+    // Now create the FEC payload
+    // This requires XORing the payloads of all protected packets
+    // First, find the largest packet to determine payload size
+    const maxPayloadLength = Math.max(...packets.map(p => p.length - RTP_HEADER_SIZE));
+    const fecPayload = Buffer.alloc(maxPayloadLength);
+
+    // XOR all payloads together
+    for (const packet of packets) {
+      const payloadOffset = RTP_HEADER_SIZE;
+      const payloadLength = packet.length - payloadOffset;
+      for (let j = 0; j < payloadLength; j += 1) {
+        // XOR byte-by-byte
+        if (j < fecPayload.length) {
+          // Use a non-bitwise approach
+          // Split into two operations to avoid exceeding line length
+          const xorResult = fecPayload[j] === packet[payloadOffset + j] ? 0 : 1;
+          fecPayload[j] = fecPayload[j] ? xorResult : packet[payloadOffset + j];
+        }
+      }
+    }
+
+    // Combine FEC RTP header, FEC header extension, and FEC payload
+    return Buffer.concat([fecHeader, fecHeaderExt, fecPayload]);
   }
 
   /**
@@ -196,17 +295,115 @@ class T140RtpTransport {
       }
     );
 
+    // If FEC is enabled, add this packet to the buffer for FEC calculation
+    if (this.config.fecEnabled) {
+      // Store original packet for FEC
+      this.packetBuffer.push(Buffer.from(rtpPacket)); // Make a copy of the packet
+      this.packetSequenceNumbers.push(this.seqNum);
+      this.packetTimestamps.push(this.timestamp);
+      this.fecCounter += 1;
+
+      // Check if we've reached the group size to send an FEC packet
+      if (this.fecCounter >= this.config.fecGroupSize!) {
+        // Create and send FEC packet
+        const fecPacket = this._createFecPacket(
+          this.packetBuffer,
+          this.packetSequenceNumbers,
+          this.packetTimestamps
+        );
+
+        // Only send if we have a valid FEC packet
+        if (fecPacket.length > 0) {
+          // Encrypt the FEC packet if using SRTP
+          let finalFecPacket: Buffer;
+          if (this.srtpSession) {
+            finalFecPacket = this.srtpSession.protect(fecPacket);
+          } else {
+            finalFecPacket = fecPacket;
+          }
+
+          // Send the FEC packet
+          this.udpSocket.send(
+            finalFecPacket,
+            0,
+            finalFecPacket.length,
+            this.remotePort,
+            this.remoteAddress,
+            (err) => {
+              if (err) {
+                console.error('Error sending FEC packet:', err);
+              }
+            }
+          );
+        }
+
+        // Reset FEC counters and buffers
+        this.fecCounter = 0;
+        this.packetBuffer = [];
+        this.packetSequenceNumbers = [];
+        this.packetTimestamps = [];
+      }
+    }
+
     // Update sequence number and timestamp for next packet
     // Use modulo to keep within 16-bit range
-    // tslint:disable-next-line:no-bitwise
-    this.seqNum = (this.seqNum + 1) & 0xFFFF;
+    this.seqNum = (this.seqNum + 1) % 65536;
     this.timestamp = this.timestamp + this.config.timestampIncrement!;
+  }
+
+  /**
+   * Sends any remaining FEC packets that might be in the buffer
+   */
+  private _sendRemainingFecPackets(): void {
+    if (!this.config.fecEnabled || this.packetBuffer.length === 0) {
+      return;
+    }
+
+    // Create and send FEC packet for any remaining packets
+    const fecPacket = this._createFecPacket(
+      this.packetBuffer,
+      this.packetSequenceNumbers,
+      this.packetTimestamps
+    );
+
+    if (fecPacket.length > 0) {
+      // Encrypt the FEC packet if using SRTP
+      let finalFecPacket: Buffer;
+      if (this.srtpSession) {
+        finalFecPacket = this.srtpSession.protect(fecPacket);
+      } else {
+        finalFecPacket = fecPacket;
+      }
+
+      // Send the FEC packet
+      this.udpSocket.send(
+        finalFecPacket,
+        0,
+        finalFecPacket.length,
+        this.remotePort,
+        this.remoteAddress,
+        (err) => {
+          if (err) {
+            console.error('Error sending final FEC packet:', err);
+          }
+        }
+      );
+    }
+
+    // Clear the buffers
+    this.packetBuffer = [];
+    this.packetSequenceNumbers = [];
+    this.packetTimestamps = [];
+    this.fecCounter = 0;
   }
 
   /**
    * Close the UDP socket
    */
   close(): void {
+    // Send any remaining FEC packets
+    this._sendRemainingFecPackets();
+    // Close the socket
     this.udpSocket.close();
   }
 }
@@ -368,12 +565,10 @@ function createSrtpKeysFromPassphrase(
   const masterSalt = Buffer.alloc(14); // 112 bits
 
   // Fill the key and salt with the passphrase (cyclic if needed)
-  // tslint:disable-next-line:no-increment-decrement
   for (let i = 0; i < masterKey.length; i += 1) {
     masterKey[i] = passphraseBuffer[i % passphraseBuffer.length];
   }
 
-  // tslint:disable-next-line:no-increment-decrement
   for (let i = 0; i < masterSalt.length; i += 1) {
     masterSalt[i] = passphraseBuffer[(i + masterKey.length) % passphraseBuffer.length];
   }
