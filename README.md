@@ -4,13 +4,10 @@
 
   <h1 style="border-bottom: none;">t140llm</h1>
 
-  <p>A TypeScript library to convert LLM streaming responses into T.140 real-time text format for WebRTC and (S)RTP applications</p>
+  <p>A TypeScript library to convert LLM streaming responses into T.140 real-time text format for SIP, WebRTC and (S)RTP applications</p>
 </div>
 
 <hr />
-
-[![MIT License][mit-license-badge]][mit-license-url]
-[![Node version][node-version-badge]][node-version-url]
 
 > Convert LLM streaming responses into T.140 real-time text
 
