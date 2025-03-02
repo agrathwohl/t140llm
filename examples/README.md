@@ -39,6 +39,14 @@ This script demonstrates the direct socket mode, which bypasses WebSocket but st
 - Eliminates WebSocket overhead for local systems
 - Provides an example of configuring RTP parameters for direct socket transmission
 
+### 5. Backspace Support Example (`backspace_example.js`)
+
+This script demonstrates the T.140 backspace support feature:
+- Processes backspace characters according to T.140 protocol
+- Shows how to enable backspace processing using the `processBackspaces` flag
+- Simulates typing with edits/corrections using backspaces
+- Compares results with and without backspace processing enabled
+
 ## Running the Examples
 
 ### Basic Demo
@@ -89,6 +97,22 @@ node examples/direct_socket_example.js
 
 You should see the received T.140 RTP packets in the first terminal.
 
+### Backspace Support Demo
+
+To see the backspace support in action:
+
+1. **Start a receiver that can interpret T.140 data:**
+```
+node examples/receiver.js
+```
+
+2. **In another terminal, run the backspace example:**
+```
+node examples/backspace_example.js
+```
+
+The receiver will show how backspace characters are properly handled, allowing for text editing within the T.140 stream.
+
 ## Expected Output
 
 When running both scripts, you'll see:
@@ -105,6 +129,7 @@ When running both scripts, you'll see:
 - Forward Error Correction (FEC) according to RFC 5109
 - WebSocket transport
 - Direct Socket Mode (local SEQPACKET socket with RTP)
+- Backspace character support per T.140 protocol
 - Performance comparison with direct transmission
 - Support for AI stream formats from various providers
 

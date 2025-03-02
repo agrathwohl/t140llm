@@ -22,6 +22,9 @@ const DEFAULT_SRTP_PORT = 5006;
 const DEFAULT_T140_PAYLOAD_TYPE = 96;
 const DEFAULT_SSRC = 12345;
 
+// T.140 constants
+const BACKSPACE = '\u0008';  // ASCII backspace character (BS)
+
 // Interface for any streaming data source
 interface TextDataStream extends EventEmitter {
   on(event: 'data', listener: (data: any) => void): this;
@@ -39,6 +42,7 @@ interface RtpConfig {
   fecEnabled?: boolean;
   fecPayloadType?: number;
   fecGroupSize?: number; // Number of packets to protect with a single FEC packet
+  processBackspaces?: boolean; // Enable T.140 backspace character processing
 }
 
 // Interface for SRTP specific configuration
@@ -439,11 +443,14 @@ wss.on('connection', (ws) => {
  */
 function processAIStream(
   stream: TextDataStream,
-  websocketUrl: string = `ws://localhost:${WS_SERVER_PORT}`
+  websocketUrl: string = `ws://localhost:${WS_SERVER_PORT}`,
+  options: { processBackspaces?: boolean } = {}
 ): void {
   const ws = new WebSocket(websocketUrl);
   let buffer = '';
   let isConnected = false;
+  let textBuffer = ''; // Buffer to track accumulated text for backspace handling
+  const processBackspaces = options.processBackspaces === true;
 
   ws.on('open', () => {
     isConnected = true;
@@ -460,11 +467,23 @@ function processAIStream(
     const text = extractTextFromChunk(chunk);
     if (!text) return;
 
+    let textToSend = text;
+
+    if (processBackspaces) {
+      // Process backspaces in the T.140 stream
+      const { processedText, updatedBuffer } = processT140BackspaceChars(text, textBuffer);
+      textBuffer = updatedBuffer;
+      textToSend = processedText;
+      
+      // Skip if nothing to send
+      if (!textToSend) return;
+    }
+
     if (isConnected) {
-      ws.send(text);
+      ws.send(textToSend);
     } else {
       // Buffer content until WebSocket is open
-      buffer += text;
+      buffer += textToSend;
     }
   });
 
@@ -493,6 +512,8 @@ function processAIStreamToRtp(
   rtpConfig: RtpConfig = {}
 ): T140RtpTransport {
   const transport = new T140RtpTransport(remoteAddress, remotePort, rtpConfig);
+  let textBuffer = ''; // Buffer to track accumulated text for backspace handling
+  const processBackspaces = rtpConfig.processBackspaces === true;
 
   // Process the AI stream and send chunks over RTP
   stream.on('data', (chunk) => {
@@ -500,7 +521,19 @@ function processAIStreamToRtp(
     const text = extractTextFromChunk(chunk);
     if (!text) return;
 
-    transport.sendText(text);
+    if (processBackspaces) {
+      // Process backspaces in the T.140 stream
+      const { processedText, updatedBuffer } = processT140BackspaceChars(text, textBuffer);
+      textBuffer = updatedBuffer;
+      
+      // Only send if there's something to send
+      if (processedText) {
+        transport.sendText(processedText);
+      }
+    } else {
+      // Send text directly without backspace processing
+      transport.sendText(text);
+    }
   });
 
   stream.on('end', () => {
@@ -527,6 +560,8 @@ function processAIStreamToSrtp(
 ): T140RtpTransport {
   // Create transport
   const transport = new T140RtpTransport(remoteAddress, remotePort, srtpConfig);
+  let textBuffer = ''; // Buffer to track accumulated text for backspace handling
+  const processBackspaces = srtpConfig.processBackspaces === true;
 
   // Setup SRTP
   transport.setupSrtp(srtpConfig);
@@ -537,7 +572,19 @@ function processAIStreamToSrtp(
     const text = extractTextFromChunk(chunk);
     if (!text) return;
 
-    transport.sendText(text);
+    if (processBackspaces) {
+      // Process backspaces in the T.140 stream
+      const { processedText, updatedBuffer } = processT140BackspaceChars(text, textBuffer);
+      textBuffer = updatedBuffer;
+      
+      // Only send if there's something to send
+      if (processedText) {
+        transport.sendText(processedText);
+      }
+    } else {
+      // Send text directly without backspace processing
+      transport.sendText(text);
+    }
   });
 
   stream.on('end', () => {
@@ -571,6 +618,8 @@ function processAIStreamToDirectSocket(
   const timestampIncrement = rtpConfig.timestampIncrement || 160;
   const payloadType = rtpConfig.payloadType || DEFAULT_T140_PAYLOAD_TYPE;
   const ssrc = rtpConfig.ssrc || DEFAULT_SSRC;
+  let textBuffer = ''; // Buffer to track accumulated text for backspace handling
+  const processBackspaces = rtpConfig.processBackspaces === true;
 
   // Process the AI stream and send chunks directly to the socket
   stream.on('data', (chunk) => {
@@ -578,8 +627,20 @@ function processAIStreamToDirectSocket(
     const text = extractTextFromChunk(chunk);
     if (!text) return;
 
-    // Still create RTP packet for T.140
-    const rtpPacket = createRtpPacket(sequenceNumber, timestamp, text, {
+    let textToSend = text;
+
+    if (processBackspaces) {
+      // Process backspaces in the T.140 stream
+      const { processedText, updatedBuffer } = processT140BackspaceChars(text, textBuffer);
+      textBuffer = updatedBuffer;
+      textToSend = processedText;
+      
+      // Skip if nothing to send
+      if (!textToSend) return;
+    }
+
+    // Create RTP packet for T.140
+    const rtpPacket = createRtpPacket(sequenceNumber, timestamp, textToSend, {
       payloadType,
       ssrc,
     });
@@ -630,6 +691,46 @@ function createSrtpKeysFromPassphrase(
 
 console.log(`WebSocket server is running on ws://localhost:${WS_SERVER_PORT}`);
 
+/**
+ * Process text to handle T.140 backspace characters
+ * @param text The input text that may contain backspace characters
+ * @param textBuffer Optional existing text buffer to apply backspaces to
+ * @returns Object containing the processed text ready for sending and updated buffer state
+ */
+function processT140BackspaceChars(text: string, textBuffer: string = ''): { processedText: string, updatedBuffer: string } {
+  if (!text.includes(BACKSPACE) && textBuffer === '') {
+    // Fast path: if there are no backspaces and no buffer, just return the text as is
+    return { processedText: text, updatedBuffer: '' };
+  }
+
+  let processedText = '';
+  let updatedBuffer = textBuffer;
+  let currentPos = 0;
+
+  // Process each character in the input text
+  while (currentPos < text.length) {
+    const char = text[currentPos];
+    
+    if (char === BACKSPACE) {
+      // Handle backspace by removing the last character from the buffer
+      if (updatedBuffer.length > 0) {
+        // Remove the last character from the buffer
+        updatedBuffer = updatedBuffer.slice(0, -1);
+        // Add backspace to the processed text to be sent
+        processedText += BACKSPACE;
+      }
+    } else {
+      // Add normal character to both buffer and processed text
+      updatedBuffer += char;
+      processedText += char;
+    }
+    
+    currentPos++;
+  }
+
+  return { processedText, updatedBuffer };
+}
+
 export {
   wss,
   createRtpPacket,
@@ -640,6 +741,8 @@ export {
   processAIStreamToDirectSocket,
   createSrtpKeysFromPassphrase,
   T140RtpTransport,
+  processT140BackspaceChars,
+  BACKSPACE,
   // Export for testing purposes only
   extractTextFromChunk,
 };
