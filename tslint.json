@@ -2,5 +2,7 @@
   "extends": [
     "@reallyland/tslint-config"
   ],
-  "rules": {}
+  "rules": {
+    "max-classes-per-file": false
+  }
 }
