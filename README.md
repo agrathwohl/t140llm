@@ -47,6 +47,31 @@
 $ npm install --save t140llm
 ```
 
+### Features
+
+- [x] T.140 RTP Payload Formatting
+- [x] T.140 redundancy
+- [x] T.140 FEC (forward error correction)
+- [x] (S)RTP Direct Delivery
+- [x] Customizable Rate Limiting and Token Pooling
+- [x] UNIX SEQPACKET sockets (for supporting >1 LLM stream simultaneously)
+- [x] UNIX STREAM sockets (for single LLM stream support)
+- [x] WebSocket
+
+### Support
+
+- [x] Vercel AI SDK
+- [x] Anthropic SDK
+- [x] OpenAI SDK
+- [ ] Reasoning Support
+- [ ] Binary Data
+- [ ] Tools
+- [ ] PDFs/Documents
+- [ ] Images
+- [ ] Video
+- [ ] Signaling
+- [ ] Custom RTP Packet Data
+
 ### Usage
 
 #### Basic Usage
