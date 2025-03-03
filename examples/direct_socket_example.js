@@ -1,16 +1,16 @@
-// Direct Socket Mode Example for T140LLM
-// This example demonstrates using the direct socket mode to bypass WebSocket
-// while still maintaining RTP encapsulation for T.140 data
+// UDP RTP Mode Example for T140LLM
+// This example demonstrates using UDP RTP transport to send T.140 data
+// to a SEQPACKET socket via a UDP bridge
 
-const { EventEmitter } = require('events');
-const { processAIStreamToDirectSocket } = require('../dist/index');
+const { EventEmitter } = require("events");
+const { processAIStreamToRtp } = require("../dist/index");
 
 // Create a mock AI stream for demonstration purposes
 class MockAIStream extends EventEmitter {
   constructor() {
     super();
   }
-  
+
   // Simulate an AI stream sending chunks of text
   simulate() {
     const messages = [
@@ -27,68 +27,77 @@ class MockAIStream extends EventEmitter {
       " for",
       " T.140",
       " over",
-      " RTP."
+      " RTP.",
     ];
-    
-    console.log('Starting simulation of AI stream...');
-    
+
+    console.log("Starting simulation of AI stream...");
+
     let index = 0;
     const interval = setInterval(() => {
       if (index < messages.length) {
         console.log(`Sending chunk: "${messages[index]}"`);
-        this.emit('data', messages[index]);
+        this.emit("data", messages[index]);
         index++;
       } else {
-        console.log('Simulation complete.');
+        console.log("Simulation complete.");
         clearInterval(interval);
-        this.emit('end');
+        this.emit("end");
       }
     }, 500); // Send a chunk every 500ms
-    
+
     return this;
   }
 }
 
-console.log('T140LLM Direct Socket Mode Example');
-console.log('-----------------------------------');
-console.log('This example demonstrates sending text directly to a SEQPACKET socket');
-console.log('with RTP encapsulation, bypassing the WebSocket intermediary.');
-console.log('');
-console.log('The socket needs to be already created at /tmp/seqpacket_socket');
-console.log('For example, using: "socat -u UNIX-LISTEN:/tmp/seqpacket_socket,type=seqpacket STDIO"');
-console.log('');
+console.log("T140LLM Direct Socket Mode Example");
+console.log("-----------------------------------");
+console.log(
+  "This example demonstrates sending text directly to a SEQPACKET socket",
+);
+console.log("with RTP encapsulation, bypassing the WebSocket intermediary.");
+console.log("");
+console.log("This example requires the seqpacket.js UDP bridge running");
+console.log(
+  'Run the seqpacket.js example first: "node examples/seqpacket.js"',
+);
+console.log("This example will send UDP packets to port 5004 which then forwards to SEQPACKET");
+console.log("");
 
 // Create a mock AI stream
 const aiStream = new MockAIStream();
 
 try {
-  // Process the AI stream using direct socket mode
-  // This will send RTP-encapsulated T.140 data directly to the SEQPACKET socket
-  console.log('Setting up direct socket mode...');
-  const socket = processAIStreamToDirectSocket(aiStream, '/tmp/seqpacket_socket', {
+  // For UDP we need to use RTP mode instead of Direct Socket mode
+  console.log("Setting up RTP mode to send to UDP...");
+  const remoteAddress = "127.0.0.1"; // Local UDP server
+  const remotePort = 5004; // Standard RTP port
+  console.log(`Sending to UDP: ${remoteAddress}:${remotePort}`);
+  
+  // Use processAIStreamToRtp instead of processAIStreamToDirectSocket
+  const transport = processAIStreamToRtp(aiStream, remoteAddress, remotePort, {
     // Optional RTP configuration
     payloadType: 96,
     ssrc: 12345,
     initialSequenceNumber: 0,
     initialTimestamp: 0,
-    timestampIncrement: 160
+    timestampIncrement: 160,
   });
-  
-  // Set up event handlers
-  socket.on('error', (err) => {
-    console.error('Socket error:', err);
+
+  // Event handlers for transport errors
+  transport.udpSocket.on("error", (err) => {
+    console.error("UDP socket error:", err);
   });
-  
-  socket.on('connect', () => {
-    console.log('Connected to SEQPACKET socket. Starting simulation...');
-    // Start sending data once connected
-    aiStream.simulate();
+
+  // Start the simulation immediately
+  console.log("UDP socket created. Starting simulation...");
+  aiStream.simulate();
+
+  // Add a cleanup handler for when simulation ends
+  aiStream.on("end", () => {
+    console.log("Simulation ended, closing transport...");
+    transport.close();
   });
-  
-  socket.on('close', () => {
-    console.log('Socket closed.');
-  });
-  
 } catch (error) {
-  console.error('Failed to setup direct socket mode:', error);
+  console.error("Failed to setup direct socket mode:", error);
 }
+
