@@ -33,7 +33,7 @@
     "build": "tsc -p tsconfig.prod.json",
     "clean": "shx rm -rf dist/ .*cache *.log",
     "lint": "npm run lint:debug -- --config tslint.prod.json",
-    "lint:debug": "tslint --project tsconfig.json --format stylish --exclude '**/node_modules/**' --exclude '**/tests/**'",
+    "lint:debug": "tslint --project tsconfig.json --format stylish 'src/**/*.ts' --config tslint.prod.json --force --fix",
     "lint:src": "tslint --project tsconfig.json --format stylish 'src/**/*.ts' --config tslint.prod.json",
     "prepublishOnly": "npm run lint && npm run build",
     "test": "jest",
