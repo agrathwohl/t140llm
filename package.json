@@ -1,7 +1,6 @@
 {
   "name": "t140llm",
-  "version": "0.0.3",
-  "private": true,
+  "version": "0.0.5",
   "type": "commonjs",
   "description": "",
   "keywords": [
