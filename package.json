@@ -34,17 +34,12 @@
     "lint": "npm run lint:debug -- --config tslint.prod.json",
     "lint:debug": "tslint --project tsconfig.json --format stylish 'src/**/*.ts' --config tslint.prod.json --force --fix",
     "lint:src": "tslint --project tsconfig.json --format stylish 'src/**/*.ts' --config tslint.prod.json",
-    "prepublishOnly": "npm run lint && npm run build",
+    "prepublishOnly": "npm run lint:src",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "ts": "tsc",
     "watch": "tsc --watch"
-  },
-  "husky": {
-    "hooks": {
-      "pre-commit": "npm run lint:src"
-    }
   },
   "dependencies": {
     "@types/ws": "7.4.7",
