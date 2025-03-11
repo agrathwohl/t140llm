@@ -23,6 +23,7 @@
     - [Direct RTP Streaming](#direct-rtp-streaming)
     - [Secure SRTP Streaming](#secure-srtp-streaming)
     - [With Forward Error Correction](#with-forward-error-correction)
+    - [With Custom Transport](#with-custom-transport)
 - [How It Works](#how-it-works)
 - [API Reference](#api-reference)
   - [processAIStream(stream, [websocketUrl])](#processaistreamstream-websocketurl)
@@ -31,6 +32,7 @@
   - [createRtpPacket(sequenceNumber, timestamp, payload, [options])](#creatertppacketsequencenumber-timestamp-payload-options)
   - [createSrtpKeysFromPassphrase(passphrase)](#createsrtpkeysfrompassphrasepassphrase)
   - [T140RtpTransport](#t140rtptransport)
+  - [TransportStream Interface](#transportstream-interface)
 - [License](#license)
 
 ## Pre-requisites
@@ -54,6 +56,7 @@ $ npm install --save t140llm
 - [x] T.140 FEC (forward error correction)
 - [x] (S)RTP Direct Delivery
 - [x] Customizable Rate Limiting and Token Pooling
+- [x] Custom Transport Streams (WebRTC, custom protocols, etc.)
 - [x] UNIX SEQPACKET sockets (for supporting >1 LLM stream simultaneously)
 - [x] UNIX STREAM sockets (for single LLM stream support)
 - [x] WebSocket
@@ -268,6 +271,59 @@ const transport = processAIStreamToRtp(
 // transport.close();
 ```
 
+#### With Custom Transport
+
+You can use your own transport mechanism instead of the built-in UDP socket:
+
+```typescript
+import { processAIStreamToRtp } from "t140llm";
+import { OpenAI } from "openai";
+
+// Initialize your LLM client
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+// Create a streaming response
+const stream = await openai.chat.completions.create({
+  model: "gpt-4",
+  messages: [{ role: "user", content: "Write a short story." }],
+  stream: true,
+});
+
+// Create a custom transport (e.g., WebRTC data channel, custom socket, etc.)
+class MyCustomTransport {
+  send(data, callback) {
+    // Send the data using your custom transport mechanism
+    console.log(`Sending ${data.length} bytes`);
+    // ...your sending logic here...
+    
+    // Call the callback when done (or with an error if it failed)
+    if (callback) callback();
+  }
+  
+  close() {
+    // Clean up resources when done
+    console.log('Transport closed');
+  }
+}
+
+// Stream using the custom transport
+const customTransport = new MyCustomTransport();
+const transport = processAIStreamToRtp(
+  stream,
+  "dummy-address", // Not used with custom transport
+  5004, // Not used with custom transport
+  {
+    customTransport, // Your custom transport implementation
+    payloadType: 96,
+    redEnabled: true, // You can still use features like redundancy with custom transport
+  },
+);
+
+// The transport will be closed automatically when the stream ends
+```
+
 ## Why?
 
 The T.140 protocol is a well-defined standard for transmitting text conversations
@@ -325,30 +381,35 @@ Processes an AI stream and sends the text chunks as T.140 data through a WebSock
 ### processAIStreamToRtp(stream, remoteAddress, [remotePort], [rtpConfig])
 
 - `stream` <TextDataStream> The streaming data source that emits text chunks.
-- `remoteAddress` <[string][string-mdn-url]> The remote IP address to send RTP packets to.
-- `remotePort` <[number][number-mdn-url]> Optional. The remote port to send RTP packets to. Defaults to `5004`.
+- `remoteAddress` <[string][string-mdn-url]> The remote IP address to send RTP packets to. Only used if no custom transport is provided.
+- `remotePort` <[number][number-mdn-url]> Optional. The remote port to send RTP packets to. Defaults to `5004`. Only used if no custom transport is provided.
 - `rtpConfig` <RtpConfig> Optional. Configuration options for RTP:
   - `payloadType` <[number][number-mdn-url]> Optional. The RTP payload type. Defaults to `96`.
-  - `ssrc` <[number][number-mdn-url]> Optional. The RTP synchronization source. Defaults to `12345`.
+  - `ssrc` <[number][number-mdn-url]> Optional. The RTP synchronization source. Defaults to a cryptographically secure random value.
   - `initialSequenceNumber` <[number][number-mdn-url]> Optional. The initial sequence number. Defaults to `0`.
   - `initialTimestamp` <[number][number-mdn-url]> Optional. The initial timestamp. Defaults to `0`.
   - `timestampIncrement` <[number][number-mdn-url]> Optional. The timestamp increment per packet. Defaults to `160`.
   - `fecEnabled` <[boolean][boolean-mdn-url]> Optional. Enable Forward Error Correction. Defaults to `false`.
   - `fecPayloadType` <[number][number-mdn-url]> Optional. The payload type for FEC packets. Defaults to `97`.
   - `fecGroupSize` <[number][number-mdn-url]> Optional. Number of media packets to protect with one FEC packet. Defaults to `5`.
+  - `customTransport` <TransportStream> Optional. A custom transport implementation to use instead of the default UDP socket.
 - returns: <T140RtpTransport> The transport object that can be used to close the connection.
 
-Processes an AI stream and sends the text chunks directly as T.140 data over RTP. When FEC is enabled, it adds Forward Error Correction packets according to RFC 5109 to help recover from packet loss.
+Processes an AI stream and sends the text chunks directly as T.140 data over RTP. When FEC is enabled, it adds Forward Error Correction packets according to RFC 5109 to help recover from packet loss. If a custom transport is provided, it will be used instead of creating a UDP socket.
 
 ### processAIStreamToSrtp(stream, remoteAddress, srtpConfig, [remotePort])
 
 - `stream` <TextDataStream> The streaming data source that emits text chunks.
-- `remoteAddress` <[string][string-mdn-url]> The remote IP address to send SRTP packets to.
+- `remoteAddress` <[string][string-mdn-url]> The remote IP address to send SRTP packets to. Only used if no custom transport is provided.
 - `srtpConfig` <SrtpConfig> SRTP configuration including master key and salt.
-- `remotePort` <[number][number-mdn-url]> Optional. The remote port to send SRTP packets to. Defaults to `5006`.
+  - `masterKey` <Buffer> Required. The SRTP master key.
+  - `masterSalt` <Buffer> Required. The SRTP master salt.
+  - `profile` <[number][number-mdn-url]> Optional. The SRTP crypto profile.
+  - `customTransport` <TransportStream> Optional. A custom transport implementation to use instead of the default UDP socket.
+- `remotePort` <[number][number-mdn-url]> Optional. The remote port to send SRTP packets to. Defaults to `5006`. Only used if no custom transport is provided.
 - returns: <T140RtpTransport> The transport object that can be used to close the connection.
 
-Processes an AI stream and sends the text chunks directly as T.140 data over secure SRTP.
+Processes an AI stream and sends the text chunks directly as T.140 data over secure SRTP. If a custom transport is provided, it will be used instead of creating a UDP socket.
 
 ### createRtpPacket(sequenceNumber, timestamp, payload, [options])
 
@@ -373,9 +434,10 @@ A class that manages RTP/SRTP connections for sending T.140 data.
 
 #### constructor(remoteAddress, [remotePort], [config])
 
-- `remoteAddress` <[string][string-mdn-url]> The remote IP address to send packets to.
-- `remotePort` <[number][number-mdn-url]> Optional. The remote port to send packets to. Defaults to `5004`.
-- `config` <RtpConfig> Optional. Configuration options for RTP, including FEC options.
+- `remoteAddress` <[string][string-mdn-url]> The remote IP address to send packets to. Only used if no custom transport is provided.
+- `remotePort` <[number][number-mdn-url]> Optional. The remote port to send packets to. Defaults to `5004`. Only used if no custom transport is provided.
+- `config` <RtpConfig> Optional. Configuration options for RTP, including FEC options and custom transport.
+  - `customTransport` <TransportStream> Optional. A custom transport implementation to use instead of the default UDP socket.
 
 #### setupSrtp(srtpConfig)
 
@@ -395,7 +457,26 @@ Sends text data as T.140 over RTP or SRTP. If FEC is enabled, it will also gener
 
 - returns: <void>
 
-Closes the UDP socket and cleans up resources. If FEC is enabled, it will send any remaining FEC packets before closing.
+Closes the UDP socket or custom transport and cleans up resources. If FEC is enabled, it will send any remaining FEC packets before closing.
+
+### TransportStream Interface
+
+An interface that custom transport implementations must follow to be compatible with T140RtpTransport.
+
+#### send(data, callback)
+
+- `data` <Buffer> The packet data to send.
+- `callback` <Function> Optional. Called when the packet has been sent or if an error occurred.
+  - `error` <Error> Optional. The error that occurred during sending, if any.
+- returns: <void>
+
+Sends a packet through the transport.
+
+#### close()
+
+- returns: <void>
+
+Optional method to close the transport and clean up resources.
 
 ## License
 

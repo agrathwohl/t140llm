@@ -47,6 +47,15 @@ This script demonstrates the T.140 backspace support feature:
 - Simulates typing with edits/corrections using backspaces
 - Compares results with and without backspace processing enabled
 
+### 6. Custom Transport Example (`custom_transport_example.js`)
+
+This script demonstrates using a custom transport implementation instead of the default UDP socket:
+- Creates a custom transport that logs packets instead of sending them over a network
+- Shows how to use the custom transport with T140RtpTransport directly
+- Shows how to use the custom transport with the processAIStreamToRtp function
+- Demonstrates compatibility with T.140 features like redundancy and FEC
+- Provides a template for implementing real-world custom transports like WebRTC data channels
+
 ## Running the Examples
 
 ### Basic Demo
@@ -112,6 +121,20 @@ node examples/backspace_example.js
 ```
 
 The receiver will show how backspace characters are properly handled, allowing for text editing within the T.140 stream.
+
+### Custom Transport Demo
+
+The custom transport example is self-contained and includes both a custom transport implementation and test code:
+
+```
+node examples/custom_transport_example.js
+```
+
+You'll see the output of the custom transport logging each packet that would be sent, including:
+- Packet size and sequence information
+- RTP header bytes for inspection
+- Text payload content
+- Statistics on transmission when complete
 
 ## Expected Output
 
