@@ -103,8 +103,29 @@ function extractTextFromChunk(chunk: any): string {
   return '';
 }
 
+/**
+ * Error types for T140RtpTransport
+ */
+enum T140RtpErrorType {
+  NETWORK_ERROR = 'NETWORK_ERROR',       // UDP socket or network-related errors
+  ENCRYPTION_ERROR = 'ENCRYPTION_ERROR', // SRTP encryption errors
+  FEC_ERROR = 'FEC_ERROR',               // Forward Error Correction errors
+  INVALID_CONFIG = 'INVALID_CONFIG',     // Invalid configuration errors
+  RATE_LIMIT_ERROR = 'RATE_LIMIT_ERROR', // Rate limiting errors
+  RESOURCE_ERROR = 'RESOURCE_ERROR',      // Resource allocation/deallocation errors
+}
+
+/**
+ * Interface for T140RtpTransport Error objects
+ */
+interface T140RtpError {
+  type: T140RtpErrorType;
+  message: string;
+  cause?: Error;
+}
+
 // Mock T140RtpTransport class
-class T140RtpTransport {
+class T140RtpTransport extends EventEmitter {
   private seqNum: number;
   private timestamp: number;
   private config: RtpConfig;
@@ -119,6 +140,12 @@ class T140RtpTransport {
     public remotePort: number = DEFAULT_RTP_PORT,
     config: RtpConfig = {}
   ) {
+    super(); // Initialize EventEmitter
+
+    if (!remoteAddress) {
+      throw new Error('Remote address is required');
+    }
+
     this.config = {
       payloadType: config.payloadType || DEFAULT_T140_PAYLOAD_TYPE,
       ssrc: config.ssrc || DEFAULT_SSRC,
@@ -209,5 +236,6 @@ export {
   processAIStreamToDirectSocket,
   createSrtpKeysFromPassphrase,
   T140RtpTransport,
+  T140RtpErrorType,
   extractTextFromChunk,
 };

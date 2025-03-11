@@ -1,6 +1,7 @@
 import * as dgram from 'dgram';
-import type { EventEmitter } from 'events';
+import { EventEmitter } from 'events';
 import * as net from 'net';
+import * as crypto from 'crypto';
 import WebSocket from 'ws';
 
 // Import werift-rtp using require to avoid TypeScript errors
@@ -20,17 +21,49 @@ const RTP_HEADER_SIZE = 12;
 const DEFAULT_RTP_PORT = 5004;
 const DEFAULT_SRTP_PORT = 5006;
 const DEFAULT_T140_PAYLOAD_TYPE = 96;
-const DEFAULT_SSRC = 12345;
+// We'll generate SSRC securely at runtime, but keep this for backward compatibility
+const LEGACY_DEFAULT_SSRC = 12345;
 const DEFAULT_RED_PAYLOAD_TYPE = 98; // RED payload type for T.140 redundancy
+
+/**
+ * Generate a cryptographically secure random SSRC value
+ * SSRC is a 32-bit unsigned integer (0 to 4,294,967,295)
+ */
+function generateSecureSSRC(): number {
+  // Generate 4 random bytes and convert to a 32-bit unsigned integer
+  const randomBytes = crypto.randomBytes(4);
+  return randomBytes.readUInt32BE(0);
+}
 
 // T.140 constants
 const BACKSPACE = '\u0008'; // ASCII backspace character (BS)
+
+/**
+ * Error types for T140RtpTransport
+ */
+enum T140RtpErrorType {
+  NETWORK_ERROR = 'NETWORK_ERROR',       // UDP socket or network-related errors
+  ENCRYPTION_ERROR = 'ENCRYPTION_ERROR', // SRTP encryption errors
+  FEC_ERROR = 'FEC_ERROR',               // Forward Error Correction errors
+  INVALID_CONFIG = 'INVALID_CONFIG',     // Invalid configuration errors
+  RATE_LIMIT_ERROR = 'RATE_LIMIT_ERROR', // Rate limiting errors
+  RESOURCE_ERROR = 'RESOURCE_ERROR',      // Resource allocation/deallocation errors
+}
 
 // Interface for any streaming data source
 interface TextDataStream extends EventEmitter {
   on(event: 'data', listener: (data: any) => void): this;
   on(event: 'end', listener: () => void): this;
   on(event: 'error', listener: (error: Error) => void): this;
+}
+
+/**
+ * Interface for T140RtpTransport Error objects
+ */
+interface T140RtpError {
+  type: T140RtpErrorType;
+  message: string;
+  cause?: Error;
 }
 
 // Interface for RTP/SRTP configuration
@@ -123,8 +156,50 @@ function extractTextFromChunk(chunk: any): string {
 
 /**
  * Class to manage RTP/SRTP connections for sending T.140 data
+ *
+ * Events:
+ * - 'error': Emitted when an error occurs. Error object contains:
+ *   - type: T140RtpErrorType - the type of error
+ *   - message: string - human-readable error message
+ *   - cause?: Error - original error that caused this error (if available)
+ *
+ * Error Types:
+ * - NETWORK_ERROR: UDP socket or network-related errors
+ *   - Occurs when sending packets fails due to network issues
+ *   - Socket connection issues
+ *
+ * - ENCRYPTION_ERROR: SRTP encryption errors
+ *   - Occurs when encryption or decryption fails
+ *   - Key generation or management errors
+ *
+ * - FEC_ERROR: Forward Error Correction errors
+ *   - Occurs when FEC packet creation fails
+ *   - Invalid FEC parameters or configurations
+ *
+ * - INVALID_CONFIG: Invalid configuration errors
+ *   - Occurs when the provided configuration is invalid
+ *   - Missing required parameters
+ *
+ * - RATE_LIMIT_ERROR: Rate limiting errors
+ *   - Occurs when rate limit handling encounters issues
+ *
+ * - RESOURCE_ERROR: Resource allocation/deallocation errors
+ *   - Occurs during socket creation/closing
+ *   - Memory allocation issues
+ *
+ * Example usage:
+ * ```typescript
+ * const transport = new T140RtpTransport('127.0.0.1', 5004);
+ * transport.on('error', (err) => {
+ *   console.error(`Error (${err.type}): ${err.message}`);
+ *   // Handle specific error types
+ *   if (err.type === T140RtpErrorType.NETWORK_ERROR) {
+ *     // Handle network error
+ *   }
+ * });
+ * ```
  */
-class T140RtpTransport {
+class T140RtpTransport extends EventEmitter {
   private seqNum: number;
   private timestamp: number;
   private config: RtpConfig;
@@ -143,6 +218,26 @@ class T140RtpTransport {
     remotePort: number = DEFAULT_RTP_PORT,
     config: RtpConfig = {}
   ) {
+    super(); // Initialize EventEmitter
+
+    // Validate remote address
+    if (!remoteAddress) {
+      throw new Error('Remote address is required');
+    }
+    
+    // Basic validation of the remote address format
+    // This performs basic IPv4 validation and rejects obviously invalid addresses
+    if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(remoteAddress) && 
+        remoteAddress !== 'localhost' && 
+        !/^[a-zA-Z0-9][a-zA-Z0-9-]{1,61}[a-zA-Z0-9](?:\.[a-zA-Z]{2,})+$/.test(remoteAddress)) {
+      throw new Error('Invalid remote address format');
+    }
+    
+    // Validate port number is within valid range
+    if (remotePort < 0 || remotePort > 65535) {
+      throw new Error('Port number must be between 0 and 65535');
+    }
+
     this.remoteAddress = remoteAddress;
     this.remotePort = remotePort;
     this.config = {
@@ -164,27 +259,57 @@ class T140RtpTransport {
     this.timestamp = this.config.initialTimestamp!;
 
     // Create UDP socket
-    this.udpSocket = dgram.createSocket('udp4');
+    try {
+      this.udpSocket = dgram.createSocket('udp4');
+
+      // Set up UDP socket error handler
+      this.udpSocket.on('error', (err) => {
+        this.emit('error', {
+          type: T140RtpErrorType.NETWORK_ERROR,
+          message: 'UDP socket error',
+          cause: err,
+        });
+      });
+    } catch (err) {
+      throw new Error(`Failed to create UDP socket: ${err}`);
+    }
   }
 
   /**
    * Initialize and configure SRTP
    */
   setupSrtp(srtpConfig: SrtpConfig): void {
-    // Create SRTP policy
-    const policy = new SrtpPolicy();
-    policy.ssrc = this.config.ssrc!;
-    policy.key = srtpConfig.masterKey;
-    policy.salt = srtpConfig.masterSalt;
+    try {
+      // Validate required keys
+      if (!srtpConfig.masterKey || !srtpConfig.masterSalt) {
+        this.emit('error', {
+          type: T140RtpErrorType.INVALID_CONFIG,
+          message: 'SRTP configuration missing required master key or salt',
+        });
+        return;
+      }
 
-    // If profile is specified, use it
-    if (srtpConfig.profile) {
-      policy.profile = srtpConfig.profile;
+      // Create SRTP policy
+      const policy = new SrtpPolicy();
+      policy.ssrc = this.config.ssrc!;
+      policy.key = srtpConfig.masterKey;
+      policy.salt = srtpConfig.masterSalt;
+
+      // If profile is specified, use it
+      if (srtpConfig.profile) {
+        policy.profile = srtpConfig.profile;
+      }
+
+      // Create SRTP context and session
+      const context = new SrtpContext([policy]);
+      this.srtpSession = new SrtpSession(context, srtpConfig.isSRTCP || false);
+    } catch (err) {
+      this.emit('error', {
+        type: T140RtpErrorType.ENCRYPTION_ERROR,
+        message: 'Failed to initialize SRTP session',
+        cause: err as Error,
+      });
     }
-
-    // Create SRTP context and session
-    const context = new SrtpContext([policy]);
-    this.srtpSession = new SrtpSession(context, srtpConfig.isSRTCP || false);
   }
 
   /**
@@ -197,6 +322,19 @@ class T140RtpTransport {
     timestamps: number[]
   ): Buffer {
     if (packets.length === 0) {
+      this.emit('error', {
+        type: T140RtpErrorType.FEC_ERROR,
+        message: 'Cannot create FEC packet from empty packet list',
+      });
+      return Buffer.alloc(0);
+    }
+
+    // Verify that all array lengths match
+    if (packets.length !== sequenceNumbers.length || packets.length !== timestamps.length) {
+      this.emit('error', {
+        type: T140RtpErrorType.FEC_ERROR,
+        message: 'Mismatch in FEC packet parameters: packets, sequence numbers, and timestamps must have the same length',
+      });
       return Buffer.alloc(0);
     }
 
@@ -432,11 +570,21 @@ class T140RtpTransport {
 
     // Encrypt the packet if using SRTP
     let finalPacket: Buffer;
-    if (this.srtpSession) {
-      // Use the typed protect method
-      finalPacket = this.srtpSession.protect(packet);
-    } else {
-      finalPacket = packet;
+    try {
+      if (this.srtpSession) {
+        // Use the typed protect method
+        finalPacket = this.srtpSession.protect(packet);
+      } else {
+        finalPacket = packet;
+      }
+    } catch (err) {
+      this.emit('error', {
+        type: T140RtpErrorType.ENCRYPTION_ERROR,
+        message: 'Failed to encrypt packet with SRTP - packet not sent',
+        cause: err as Error,
+      });
+      // Don't fall back to unencrypted - abort the send operation for security
+      return;
     }
 
     // Send the packet
@@ -448,7 +596,11 @@ class T140RtpTransport {
       this.remoteAddress,
       (err) => {
         if (err) {
-          console.error('Error sending RTP packet:', err);
+          this.emit('error', {
+            type: T140RtpErrorType.NETWORK_ERROR,
+            message: 'Failed to send RTP packet',
+            cause: err,
+          });
         }
       }
     );
@@ -479,10 +631,20 @@ class T140RtpTransport {
         if (fecPacket.length > 0) {
           // Encrypt the FEC packet if using SRTP
           let finalFecPacket: Buffer;
-          if (this.srtpSession) {
-            finalFecPacket = this.srtpSession.protect(fecPacket);
-          } else {
-            finalFecPacket = fecPacket;
+          try {
+            if (this.srtpSession) {
+              finalFecPacket = this.srtpSession.protect(fecPacket);
+            } else {
+              finalFecPacket = fecPacket;
+            }
+          } catch (err) {
+            this.emit('error', {
+              type: T140RtpErrorType.ENCRYPTION_ERROR,
+              message: 'Failed to encrypt FEC packet with SRTP - packet not sent',
+              cause: err as Error,
+            });
+            // Don't fall back to unencrypted - abort the send operation for security
+            return;
           }
 
           // Send the FEC packet
@@ -494,7 +656,11 @@ class T140RtpTransport {
             this.remoteAddress,
             (err) => {
               if (err) {
-                console.error('Error sending FEC packet:', err);
+                this.emit('error', {
+                  type: T140RtpErrorType.NETWORK_ERROR,
+                  message: 'Failed to send FEC packet',
+                  cause: err,
+                });
               }
             }
           );
@@ -532,10 +698,20 @@ class T140RtpTransport {
     if (fecPacket.length > 0) {
       // Encrypt the FEC packet if using SRTP
       let finalFecPacket: Buffer;
-      if (this.srtpSession) {
-        finalFecPacket = this.srtpSession.protect(fecPacket);
-      } else {
-        finalFecPacket = fecPacket;
+      try {
+        if (this.srtpSession) {
+          finalFecPacket = this.srtpSession.protect(fecPacket);
+        } else {
+          finalFecPacket = fecPacket;
+        }
+      } catch (err) {
+        this.emit('error', {
+          type: T140RtpErrorType.ENCRYPTION_ERROR,
+          message: 'Failed to encrypt final FEC packet with SRTP - packet not sent',
+          cause: err as Error,
+        });
+        // Don't fall back to unencrypted - abort the send operation for security
+        return;
       }
 
       // Send the FEC packet
@@ -547,7 +723,11 @@ class T140RtpTransport {
         this.remoteAddress,
         (err) => {
           if (err) {
-            console.error('Error sending final FEC packet:', err);
+            this.emit('error', {
+              type: T140RtpErrorType.NETWORK_ERROR,
+              message: 'Failed to send final FEC packet',
+              cause: err,
+            });
           }
         }
       );
@@ -564,10 +744,19 @@ class T140RtpTransport {
    * Close the UDP socket
    */
   close(): void {
-    // Send any remaining FEC packets
-    this._sendRemainingFecPackets();
-    // Close the socket
-    this.udpSocket.close();
+    try {
+      // Send any remaining FEC packets
+      this._sendRemainingFecPackets();
+
+      // Close the socket
+      this.udpSocket.close();
+    } catch (err) {
+      this.emit('error', {
+        type: T140RtpErrorType.RESOURCE_ERROR,
+        message: 'Error closing transport resources',
+        cause: err as Error,
+      });
+    }
   }
 }
 
@@ -752,10 +941,18 @@ function processAIStreamToRtp(
     transport.close();
   });
 
+  // Handle errors from the input stream
   stream.on('error', (err) => {
     console.error('AI Stream error:', err);
     clearInterval(sendInterval);
     transport.close();
+  });
+
+  // Forward errors from the transport to any listeners attached to the transport
+  transport.on('error', (err: T140RtpError) => {
+    // The error is already emitted by the transport, no need to re-emit
+    // Just log for debugging if needed
+    console.error(`T140RtpTransport error (${err.type}):`, err.message);
   });
 
   return transport;
@@ -807,9 +1004,17 @@ function processAIStreamToSrtp(
     transport.close();
   });
 
+  // Handle errors from the input stream
   stream.on('error', (err) => {
     console.error('AI Stream error:', err);
     transport.close();
+  });
+
+  // Forward errors from the transport to any listeners attached to the transport
+  transport.on('error', (err: T140RtpError) => {
+    // The error is already emitted by the transport, no need to re-emit
+    // Just log for debugging if needed
+    console.error(`T140RtpTransport error (${err.type}):`, err.message);
   });
 
   return transport;
@@ -886,26 +1091,31 @@ function processAIStreamToDirectSocket(
 
 /**
  * Helper function to create SRTP key and salt from a passphrase
+ * Uses PBKDF2 for secure key derivation
  */
 function createSrtpKeysFromPassphrase(passphrase: string): {
   masterKey: Buffer;
   masterSalt: Buffer;
 } {
-  // Simple implementation - in production, use a more secure key derivation
-  const passphraseBuffer = Buffer.from(passphrase);
-  const masterKey = Buffer.alloc(16); // 128 bits
-  const masterSalt = Buffer.alloc(14); // 112 bits
-
-  // Fill the key and salt with the passphrase (cyclic if needed)
-  for (let i = 0; i < masterKey.length; i += 1) {
-    masterKey[i] = passphraseBuffer[i % passphraseBuffer.length];
-  }
-
-  for (let i = 0; i < masterSalt.length; i += 1) {
-    masterSalt[i] =
-      passphraseBuffer[(i + masterKey.length) % passphraseBuffer.length];
-  }
-
+  // Use a fixed salt for PBKDF2 
+  // This is a constant salt - in a production environment, consider using a per-user salt
+  // that is securely stored and associated with each user
+  const fixedSalt = Buffer.from('T140RtpTransportSaltValue', 'utf8');
+  
+  // Use PBKDF2 to derive key material (10000 iterations is a reasonable minimum)
+  // Total 30 bytes for both key (16 bytes) and salt (14 bytes)
+  const derivedKeyMaterial = crypto.pbkdf2Sync(
+    passphrase,
+    fixedSalt,
+    10000,
+    30,
+    'sha256'
+  );
+  
+  // Split the derived key material into master key and master salt
+  const masterKey = derivedKeyMaterial.slice(0, 16);    // First 16 bytes (128 bits) for master key
+  const masterSalt = derivedKeyMaterial.slice(16, 30);  // Next 14 bytes (112 bits) for master salt
+  
   return { masterKey, masterSalt };
 }
 
@@ -970,6 +1180,9 @@ export {
   T140RtpTransport,
   processT140BackspaceChars,
   BACKSPACE,
+  T140RtpErrorType,
+  // Types
+  T140RtpError,
   // Export for testing purposes only
   extractTextFromChunk,
 };
