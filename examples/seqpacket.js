@@ -4,10 +4,14 @@ const dgram = require("dgram");
 
 console.log("T140LLM SEQPACKET Socket Server Example");
 console.log("---------------------------------------");
-console.log("This server creates a SEQPACKET socket for direct_socket_example.js to use");
-console.log("Run direct_socket_example.js in another terminal after this server is running");
+console.log(
+  "This server creates a SEQPACKET socket for direct_socket_example.js to use",
+);
+console.log(
+  "Run direct_socket_example.js in another terminal after this server is running",
+);
 
-const bindPath = "socket";
+const bindPath = "/tmp/seqpacket_socket";
 const UDP_PORT = 5004; // Standard RTP port
 
 // Delete socket files if they already exist
@@ -16,33 +20,35 @@ try {
 } catch (e) {}
 
 // Create a UDP server to bridge between UDP and SeqpacketSocket
-const udpServer = dgram.createSocket('udp4');
+const udpServer = dgram.createSocket("udp4");
 
-udpServer.on('listening', () => {
+udpServer.on("listening", () => {
   const address = udpServer.address();
   console.log(`UDP bridge listening on ${address.address}:${address.port}`);
 });
 
 let seqClient = null;
 
-udpServer.on('message', (msg, rinfo) => {
-  console.log(`Received UDP packet: ${msg.length} bytes from ${rinfo.address}:${rinfo.port}`);
-  
+udpServer.on("message", (msg, rinfo) => {
+  console.log(
+    `Received UDP packet: ${msg.length} bytes from ${rinfo.address}:${rinfo.port}`,
+  );
+
   // Create a SeqpacketSocket client if not already created
   if (!seqClient) {
     seqClient = new SeqpacketSocket();
-    
+
     seqClient.connect(bindPath, () => {
       console.log("Connected to SEQPACKET server, bridge active");
       // Forward this message
       seqClient.write(msg);
     });
-    
+
     seqClient.on("error", (err) => {
       console.error("SEQPACKET client error:", err);
       seqClient = null;
     });
-    
+
     seqClient.on("close", () => {
       console.log("SEQPACKET connection closed");
       seqClient = null;
@@ -55,7 +61,7 @@ udpServer.on('message', (msg, rinfo) => {
 });
 
 // Handle errors
-udpServer.on('error', (err) => {
+udpServer.on("error", (err) => {
   console.error(`UDP server error:\n${err.stack}`);
   udpServer.close();
   if (seqClient) {
@@ -75,32 +81,35 @@ server.listen(bindPath);
 // Handle incoming connections
 server.on("connection", (socket) => {
   console.log("SEQPACKET client connected!");
-  
+
   // Log data received from clients
   socket.on("data", (buf) => {
     // For RTP packets, parse the header
-    if (buf.length >= 12) { // RTP header is 12 bytes
+    if (buf.length >= 12) {
+      // RTP header is 12 bytes
       const version = (buf[0] >> 6) & 0x03;
       const padding = (buf[0] >> 5) & 0x01;
       const extension = (buf[0] >> 4) & 0x01;
-      const csrcCount = buf[0] & 0x0F;
+      const csrcCount = buf[0] & 0x0f;
       const marker = (buf[1] >> 7) & 0x01;
-      const payloadType = buf[1] & 0x7F;
+      const payloadType = buf[1] & 0x7f;
       const sequenceNumber = buf.readUInt16BE(2);
       const timestamp = buf.readUInt32BE(4);
       const ssrc = buf.readUInt32BE(8);
-      
+
       console.log(`Received RTP packet:`);
-      console.log(`  Version: ${version}, PT: ${payloadType}, Seq: ${sequenceNumber}`);
+      console.log(
+        `  Version: ${version}, PT: ${payloadType}, Seq: ${sequenceNumber}`,
+      );
       console.log(`  Timestamp: ${timestamp}, SSRC: ${ssrc}`);
-      
+
       // Extract and show payload as text if possible
       if (buf.length > 12) {
         try {
-          const payload = buf.slice(12).toString('utf8');
-          console.log(`  Payload (${buf.length-12} bytes): "${payload}"`);
+          const payload = buf.slice(12).toString("utf8");
+          console.log(`  Payload (${buf.length - 12} bytes): "${payload}"`);
         } catch (e) {
-          console.log(`  Payload: Binary data (${buf.length-12} bytes)`);
+          console.log(`  Payload: Binary data (${buf.length - 12} bytes)`);
         }
       }
     } else {
@@ -111,11 +120,11 @@ server.on("connection", (socket) => {
       } catch (e) {}
     }
   });
-  
+
   socket.on("close", () => {
     console.log("SEQPACKET client disconnected");
   });
-  
+
   socket.on("error", (err) => {
     console.error("SEQPACKET socket error:", err);
   });
