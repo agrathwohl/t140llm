@@ -2,6 +2,9 @@ import * as dgram from 'dgram';
 import { EventEmitter } from 'events';
 import * as net from 'net';
 import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as https from 'https';
+import * as http from 'http';
 import WebSocket from 'ws';
 
 // Import werift-rtp using require to avoid TypeScript errors
@@ -12,6 +15,18 @@ const { SrtpSession, SrtpPolicy, SrtpContext } = weriftRtp;
 
 // WebSocket server address and port
 const WS_SERVER_PORT = 8765;
+
+/**
+ * Interface for WebSocket server configuration options
+ */
+interface WebSocketServerOptions {
+  port?: number;
+  tls?: {
+    cert: string;   // Path to certificate file
+    key: string;    // Path to private key file
+    ca?: string;    // Optional path to CA certificate
+  };
+}
 
 // Unix SEQPACKET socket path
 const SEQPACKET_SOCKET_PATH = '/tmp/seqpacket_socket';
@@ -108,7 +123,8 @@ function createRtpPacket(
   const csrcCount = 0;
   const marker = 0;
   const payloadType = options.payloadType || DEFAULT_T140_PAYLOAD_TYPE;
-  const ssrc = options.ssrc || DEFAULT_SSRC;
+  // Generate secure SSRC if not provided
+  const ssrc = options.ssrc || generateSecureSSRC();
 
   const rtpHeader = Buffer.alloc(RTP_HEADER_SIZE);
   // Use a different approach to avoid bitwise operations
@@ -240,9 +256,13 @@ class T140RtpTransport extends EventEmitter {
 
     this.remoteAddress = remoteAddress;
     this.remotePort = remotePort;
+    // Generate a secure random SSRC if not provided
+    const secureSSRC = generateSecureSSRC();
+    
     this.config = {
       payloadType: config.payloadType || DEFAULT_T140_PAYLOAD_TYPE,
-      ssrc: config.ssrc || DEFAULT_SSRC,
+      // Use provided SSRC (if any), otherwise use secure random SSRC
+      ssrc: config.ssrc || secureSSRC,
       initialSequenceNumber: config.initialSequenceNumber || 0,
       initialTimestamp: config.initialTimestamp || 0,
       timestampIncrement: config.timestampIncrement || 160, // 20ms at 8kHz
@@ -760,41 +780,118 @@ class T140RtpTransport extends EventEmitter {
   }
 }
 
-// Create WebSocket server
-const wss = new WebSocket.Server({ port: WS_SERVER_PORT });
+/**
+ * Create and initialize a WebSocket server with optional TLS support
+ */
+function createWebSocketServer(options: WebSocketServerOptions = {}): WebSocket.Server {
+  const port = options.port || WS_SERVER_PORT;
+  let server: WebSocket.Server;
+  
+  // If TLS options are provided, create a secure server
+  if (options.tls) {
+    try {
+      // Read certificate files
+      const httpsOptions = {
+        cert: fs.readFileSync(options.tls.cert),
+        key: fs.readFileSync(options.tls.key),
+      };
+      
+      // Add CA certificate if provided
+      if (options.tls.ca) {
+        httpsOptions['ca'] = fs.readFileSync(options.tls.ca);
+      }
+      
+      // Create HTTPS server
+      const httpsServer = https.createServer(httpsOptions);
+      
+      // Create secure WebSocket server using the HTTPS server
+      server = new WebSocket.Server({ server: httpsServer });
+      
+      // Start HTTPS server
+      httpsServer.listen(port, () => {
+        console.log(`WebSocket Secure (WSS) server is running on wss://localhost:${port}`);
+      });
+    } catch (err) {
+      console.error('Failed to initialize secure WebSocket server:', err);
+      // Fall back to non-secure WebSocket server
+      console.warn('Falling back to non-secure WebSocket server');
+      server = new WebSocket.Server({ port });
+      console.log(`WebSocket server is running on ws://localhost:${port}`);
+    }
+  } else {
+    // Create standard non-secure WebSocket server
+    server = new WebSocket.Server({ port });
+    console.log(`WebSocket server is running on ws://localhost:${port}`);
+  }
+  
+  // Set up connection handler
+  server.on('connection', (ws) => {
+    // Create Unix SEQPACKET socket
+    const seqpacketSocket = net.createConnection(SEQPACKET_SOCKET_PATH);
 
-wss.on('connection', (ws) => {
-  // Create Unix SEQPACKET socket
-  const seqpacketSocket = net.createConnection(SEQPACKET_SOCKET_PATH);
+    let sequenceNumber = 0;
+    let timestamp = 0;
 
-  let sequenceNumber = 0;
-  let timestamp = 0;
+    ws.on('message', (message: string) => {
+      // Create RTP packet with T.140 payload
+      const rtpPacket = createRtpPacket(sequenceNumber, timestamp, message);
+      // Send RTP packet through Unix SEQPACKET socket
+      seqpacketSocket.write(rtpPacket);
 
-  ws.on('message', (message: string) => {
-    // Create RTP packet with T.140 payload
-    const rtpPacket = createRtpPacket(sequenceNumber, timestamp, message);
-    // Send RTP packet through Unix SEQPACKET socket
-    seqpacketSocket.write(rtpPacket);
+      // Update sequence number and timestamp
+      sequenceNumber += 1;
+      timestamp += 160; // Assuming 20ms per packet at 8kHz
+    });
 
-    // Update sequence number and timestamp
-    sequenceNumber += 1;
-    timestamp += 160; // Assuming 20ms per packet at 8kHz
+    ws.on('close', () => {
+      seqpacketSocket.end();
+    });
   });
+  
+  return server;
+}
 
-  ws.on('close', () => {
-    seqpacketSocket.end();
-  });
-});
+// Create WebSocket server (non-secure by default)
+const wss = createWebSocketServer();
 
 /**
  * Process an AI stream and send chunks through WebSocket to T.140
+ * Supports both secure (wss://) and non-secure (ws://) WebSocket connections
  */
 function processAIStream(
   stream: TextDataStream,
   websocketUrl: string = `ws://localhost:${WS_SERVER_PORT}`,
-  options: { processBackspaces?: boolean } = {}
+  options: { 
+    processBackspaces?: boolean,
+    tlsOptions?: {
+      rejectUnauthorized?: boolean,    // Whether to reject connections with invalid certificates
+      ca?: string,                     // Optional CA certificate content for validation
+      cert?: string,                   // Optional client certificate content
+      key?: string                     // Optional client private key content
+    }
+  } = {}
 ): void {
-  const ws = new WebSocket(websocketUrl);
+  // Setup WebSocket connection with TLS options if provided and URL is WSS
+  const isSecure = websocketUrl.startsWith('wss://');
+  const wsOptions: WebSocket.ClientOptions = {};
+  
+  // If this is a secure connection and TLS options are provided
+  if (isSecure && options.tlsOptions) {
+    wsOptions.rejectUnauthorized = options.tlsOptions.rejectUnauthorized !== false;
+    
+    // Add CA certificate if provided
+    if (options.tlsOptions.ca) {
+      wsOptions.ca = options.tlsOptions.ca;
+    }
+    
+    // Add client certificate and key if provided
+    if (options.tlsOptions.cert && options.tlsOptions.key) {
+      wsOptions.cert = options.tlsOptions.cert;
+      wsOptions.key = options.tlsOptions.key;
+    }
+  }
+  
+  const ws = new WebSocket(websocketUrl, wsOptions);
   let buffer = '';
   let isConnected = false;
   let textBuffer = ''; // Buffer to track accumulated text for backspace handling
@@ -1119,7 +1216,7 @@ function createSrtpKeysFromPassphrase(passphrase: string): {
   return { masterKey, masterSalt };
 }
 
-console.log(`WebSocket server is running on ws://localhost:${WS_SERVER_PORT}`);
+// Server status is reported by the createWebSocketServer function
 
 /**
  * Process text to handle T.140 backspace characters
@@ -1171,12 +1268,15 @@ function processT140BackspaceChars(
 export {
   wss,
   createRtpPacket,
+  createWebSocketServer,
+  WebSocketServerOptions,
   SEQPACKET_SOCKET_PATH,
   processAIStream,
   processAIStreamToRtp,
   processAIStreamToSrtp,
   processAIStreamToDirectSocket,
   createSrtpKeysFromPassphrase,
+  generateSecureSSRC,
   T140RtpTransport,
   processT140BackspaceChars,
   BACKSPACE,
