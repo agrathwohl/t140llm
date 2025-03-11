@@ -1,10 +1,10 @@
+import * as crypto from 'crypto';
 import * as dgram from 'dgram';
 import { EventEmitter } from 'events';
-import * as net from 'net';
-import * as crypto from 'crypto';
 import * as fs from 'fs';
-import * as https from 'https';
 import * as http from 'http';
+import * as https from 'https';
+import * as net from 'net';
 import WebSocket from 'ws';
 
 // Import werift-rtp using require to avoid TypeScript errors
@@ -240,15 +240,15 @@ class T140RtpTransport extends EventEmitter {
     if (!remoteAddress) {
       throw new Error('Remote address is required');
     }
-    
+
     // Basic validation of the remote address format
     // This performs basic IPv4 validation and rejects obviously invalid addresses
-    if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(remoteAddress) && 
-        remoteAddress !== 'localhost' && 
+    if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(remoteAddress) &&
+        remoteAddress !== 'localhost' &&
         !/^[a-zA-Z0-9][a-zA-Z0-9-]{1,61}[a-zA-Z0-9](?:\.[a-zA-Z]{2,})+$/.test(remoteAddress)) {
       throw new Error('Invalid remote address format');
     }
-    
+
     // Validate port number is within valid range
     if (remotePort < 0 || remotePort > 65535) {
       throw new Error('Port number must be between 0 and 65535');
@@ -258,7 +258,7 @@ class T140RtpTransport extends EventEmitter {
     this.remotePort = remotePort;
     // Generate a secure random SSRC if not provided
     const secureSSRC = generateSecureSSRC();
-    
+
     this.config = {
       payloadType: config.payloadType || DEFAULT_T140_PAYLOAD_TYPE,
       // Use provided SSRC (if any), otherwise use secure random SSRC
@@ -786,7 +786,7 @@ class T140RtpTransport extends EventEmitter {
 function createWebSocketServer(options: WebSocketServerOptions = {}): WebSocket.Server {
   const port = options.port || WS_SERVER_PORT;
   let server: WebSocket.Server;
-  
+
   // If TLS options are provided, create a secure server
   if (options.tls) {
     try {
@@ -795,18 +795,18 @@ function createWebSocketServer(options: WebSocketServerOptions = {}): WebSocket.
         cert: fs.readFileSync(options.tls.cert),
         key: fs.readFileSync(options.tls.key),
       };
-      
+
       // Add CA certificate if provided
       if (options.tls.ca) {
-        httpsOptions['ca'] = fs.readFileSync(options.tls.ca);
+        httpsOptions.ca = fs.readFileSync(options.tls.ca);
       }
-      
+
       // Create HTTPS server
       const httpsServer = https.createServer(httpsOptions);
-      
+
       // Create secure WebSocket server using the HTTPS server
       server = new WebSocket.Server({ server: httpsServer });
-      
+
       // Start HTTPS server
       httpsServer.listen(port, () => {
         console.log(`WebSocket Secure (WSS) server is running on wss://localhost:${port}`);
@@ -823,7 +823,7 @@ function createWebSocketServer(options: WebSocketServerOptions = {}): WebSocket.
     server = new WebSocket.Server({ port });
     console.log(`WebSocket server is running on ws://localhost:${port}`);
   }
-  
+
   // Set up connection handler
   server.on('connection', (ws) => {
     // Create Unix SEQPACKET socket
@@ -847,7 +847,7 @@ function createWebSocketServer(options: WebSocketServerOptions = {}): WebSocket.
       seqpacketSocket.end();
     });
   });
-  
+
   return server;
 }
 
@@ -861,7 +861,7 @@ const wss = createWebSocketServer();
 function processAIStream(
   stream: TextDataStream,
   websocketUrl: string = `ws://localhost:${WS_SERVER_PORT}`,
-  options: { 
+  options: {
     processBackspaces?: boolean,
     tlsOptions?: {
       rejectUnauthorized?: boolean,    // Whether to reject connections with invalid certificates
@@ -874,23 +874,23 @@ function processAIStream(
   // Setup WebSocket connection with TLS options if provided and URL is WSS
   const isSecure = websocketUrl.startsWith('wss://');
   const wsOptions: WebSocket.ClientOptions = {};
-  
+
   // If this is a secure connection and TLS options are provided
   if (isSecure && options.tlsOptions) {
     wsOptions.rejectUnauthorized = options.tlsOptions.rejectUnauthorized !== false;
-    
+
     // Add CA certificate if provided
     if (options.tlsOptions.ca) {
       wsOptions.ca = options.tlsOptions.ca;
     }
-    
+
     // Add client certificate and key if provided
     if (options.tlsOptions.cert && options.tlsOptions.key) {
       wsOptions.cert = options.tlsOptions.cert;
       wsOptions.key = options.tlsOptions.key;
     }
   }
-  
+
   const ws = new WebSocket(websocketUrl, wsOptions);
   let buffer = '';
   let isConnected = false;
@@ -1194,11 +1194,11 @@ function createSrtpKeysFromPassphrase(passphrase: string): {
   masterKey: Buffer;
   masterSalt: Buffer;
 } {
-  // Use a fixed salt for PBKDF2 
+  // Use a fixed salt for PBKDF2
   // This is a constant salt - in a production environment, consider using a per-user salt
   // that is securely stored and associated with each user
   const fixedSalt = Buffer.from('T140RtpTransportSaltValue', 'utf8');
-  
+
   // Use PBKDF2 to derive key material (10000 iterations is a reasonable minimum)
   // Total 30 bytes for both key (16 bytes) and salt (14 bytes)
   const derivedKeyMaterial = crypto.pbkdf2Sync(
@@ -1208,11 +1208,11 @@ function createSrtpKeysFromPassphrase(passphrase: string): {
     30,
     'sha256'
   );
-  
+
   // Split the derived key material into master key and master salt
   const masterKey = derivedKeyMaterial.slice(0, 16);    // First 16 bytes (128 bits) for master key
   const masterSalt = derivedKeyMaterial.slice(16, 30);  // Next 14 bytes (112 bits) for master salt
-  
+
   return { masterKey, masterSalt };
 }
 
