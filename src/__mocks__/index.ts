@@ -119,12 +119,12 @@ function extractTextFromChunk(chunk: any): string {
  * Error types for T140RtpTransport
  */
 enum T140RtpErrorType {
-  NETWORK_ERROR = 'NETWORK_ERROR',       // UDP socket or network-related errors
+  NETWORK_ERROR = 'NETWORK_ERROR', // UDP socket or network-related errors
   ENCRYPTION_ERROR = 'ENCRYPTION_ERROR', // SRTP encryption errors
-  FEC_ERROR = 'FEC_ERROR',               // Forward Error Correction errors
-  INVALID_CONFIG = 'INVALID_CONFIG',     // Invalid configuration errors
+  FEC_ERROR = 'FEC_ERROR', // Forward Error Correction errors
+  INVALID_CONFIG = 'INVALID_CONFIG', // Invalid configuration errors
   RATE_LIMIT_ERROR = 'RATE_LIMIT_ERROR', // Rate limiting errors
-  RESOURCE_ERROR = 'RESOURCE_ERROR',      // Resource allocation/deallocation errors
+  RESOURCE_ERROR = 'RESOURCE_ERROR', // Resource allocation/deallocation errors
 }
 
 /**
@@ -144,13 +144,15 @@ class T140RtpTransport extends EventEmitter {
   private customTransport?: TransportStream;
 
   // Expose the _sendPacket method for tests
-  public _sendPacket = jest.fn((packet: Buffer, callback?: (error?: Error) => void) => {
-    if (this.customTransport) {
-      this.customTransport.send(packet, callback);
-    } else if (callback) {
-      callback();
+  public _sendPacket = jest.fn(
+    (packet: Buffer, callback?: (error?: Error) => void) => {
+      if (this.customTransport) {
+        this.customTransport.send(packet, callback);
+      } else if (callback) {
+        callback();
+      }
     }
-  });
+  );
 
   // Mocked methods for testing
   public sendText = jest.fn((text: string) => {
@@ -169,7 +171,10 @@ class T140RtpTransport extends EventEmitter {
   });
 
   public close = jest.fn(() => {
-    if (this.customTransport && typeof this.customTransport.close === 'function') {
+    if (
+      this.customTransport &&
+      typeof this.customTransport.close === 'function'
+    ) {
       this.customTransport.close();
     }
   });
@@ -187,7 +192,9 @@ class T140RtpTransport extends EventEmitter {
 
     // Only validate remoteAddress if no custom transport is provided
     if (!this.customTransport && !remoteAddress) {
-      throw new Error('Remote address is required when no custom transport is provided');
+      throw new Error(
+        'Remote address is required when no custom transport is provided'
+      );
     }
 
     this.config = {
@@ -214,6 +221,7 @@ class T140RtpTransport extends EventEmitter {
 
 // Simulate interval for rate limiting
 function createMockInterval(callback: () => void, interval: number): number {
+  /* tslint:disable:no-empty */
   const id = setTimeout(() => {}, 0); // Just need an ID
   callback(); // Call immediately for testing
   return id as unknown as number;
@@ -221,88 +229,112 @@ function createMockInterval(callback: () => void, interval: number): number {
 
 // Mock process functions
 const processAIStream = jest.fn();
-const processAIStreamToRtp = jest.fn().mockImplementation(
-  (stream: TextDataStream, remoteAddress: string, remotePort?: number, rtpConfig?: RtpConfig) => {
-    const transport = new T140RtpTransport(remoteAddress, remotePort, rtpConfig);
+const processAIStreamToRtp = jest
+  .fn()
+  .mockImplementation(
+    (
+      stream: TextDataStream,
+      remoteAddress: string,
+      remotePort?: number,
+      rtpConfig?: RtpConfig
+    ) => {
+      const transport = new T140RtpTransport(
+        remoteAddress,
+        remotePort,
+        rtpConfig
+      );
 
-    // Set up a mock interval for rate limiting
-    const sendInterval = createMockInterval(() => {
-      // This would normally handle rate-limited sending but for tests
-      // we just want to trigger sending immediately
-    }, 100);
-
-    // Set up the event handlers directly in the mock
-    stream.on('data', (chunk) => {
-      const text = extractTextFromChunk(chunk);
-      if (text) transport.sendText(text);
-    });
-
-    stream.on('end', () => {
-      clearTimeout(sendInterval); // Clear the mock interval
-      transport.close();
-    });
-
-    stream.on('error', () => {
-      clearTimeout(sendInterval); // Clear the mock interval
-      transport.close();
-    });
-
-    return transport;
-  }
-);
-
-const processAIStreamToSrtp = jest.fn().mockImplementation(
-  (stream: TextDataStream, remoteAddress: string, srtpConfig: SrtpConfig, remotePort?: number) => {
-    const transport = new T140RtpTransport(remoteAddress, remotePort, srtpConfig);
-    transport.setupSrtp(srtpConfig);
-
-    // Set up the event handlers
-    stream.on('data', (chunk) => {
-      const text = extractTextFromChunk(chunk);
-      if (text) transport.sendText(text);
-    });
-
-    stream.on('end', () => {
-      transport.close();
-    });
-
-    stream.on('error', () => {
-      transport.close();
-    });
-
-    return transport;
-  }
-);
-
-const processAIStreamToDirectSocket = jest.fn().mockImplementation(
-  (stream: TextDataStream, socketPath?: string, rtpConfig?: RtpConfig) => {
-    // If a custom transport is provided, use it
-    if (rtpConfig?.customTransport) {
-      const customTransport = rtpConfig.customTransport;
+      // Set up a mock interval for rate limiting
+      const sendInterval = createMockInterval(() => {
+        // This would normally handle rate-limited sending but for tests
+        // we just want to trigger sending immediately
+      }, 100);
 
       // Set up the event handlers directly in the mock
       stream.on('data', (chunk) => {
         const text = extractTextFromChunk(chunk);
-        if (text) {
-          // Create an RTP packet and send through custom transport
-          const packet = createRtpPacket(0, 0, text, {
-            payloadType: rtpConfig.payloadType,
-            ssrc: rtpConfig.ssrc,
-          });
-          customTransport.send(packet);
-        }
+        if (text) transport.sendText(text);
       });
 
       stream.on('end', () => {
-        if (customTransport.close) customTransport.close();
+        clearTimeout(sendInterval); // Clear the mock interval
+        transport.close();
       });
 
       stream.on('error', () => {
-        if (customTransport.close) customTransport.close();
+        clearTimeout(sendInterval); // Clear the mock interval
+        transport.close();
       });
 
-      return customTransport;
-    }  {
+      return transport;
+    }
+  );
+
+const processAIStreamToSrtp = jest
+  .fn()
+  .mockImplementation(
+    (
+      stream: TextDataStream,
+      remoteAddress: string,
+      srtpConfig: SrtpConfig,
+      remotePort?: number
+    ) => {
+      const transport = new T140RtpTransport(
+        remoteAddress,
+        remotePort,
+        srtpConfig
+      );
+      transport.setupSrtp(srtpConfig);
+
+      // Set up the event handlers
+      stream.on('data', (chunk) => {
+        const text = extractTextFromChunk(chunk);
+        if (text) transport.sendText(text);
+      });
+
+      stream.on('end', () => {
+        transport.close();
+      });
+
+      stream.on('error', () => {
+        transport.close();
+      });
+
+      return transport;
+    }
+  );
+
+const processAIStreamToDirectSocket = jest
+  .fn()
+  .mockImplementation(
+    (stream: TextDataStream, socketPath?: string, rtpConfig?: RtpConfig) => {
+      // If a custom transport is provided, use it
+      if (rtpConfig?.customTransport) {
+        const customTransport = rtpConfig.customTransport;
+
+        // Set up the event handlers directly in the mock
+        stream.on('data', (chunk) => {
+          const text = extractTextFromChunk(chunk);
+          if (text) {
+            // Create an RTP packet and send through custom transport
+            const packet = createRtpPacket(0, 0, text, {
+              payloadType: rtpConfig.payloadType,
+              ssrc: rtpConfig.ssrc,
+            });
+            customTransport.send(packet);
+          }
+        });
+
+        stream.on('end', () => {
+          if (customTransport.close) customTransport.close();
+        });
+
+        stream.on('error', () => {
+          if (customTransport.close) customTransport.close();
+        });
+
+        return customTransport;
+      }
       // Return a mock socket
       const mockSocket: any = new EventEmitter();
       mockSocket.write = jest.fn();
@@ -324,13 +356,13 @@ const processAIStreamToDirectSocket = jest.fn().mockImplementation(
 
       return mockSocket;
     }
-  }
-);
+  );
 
 // Mock SRTP key creation
-function createSrtpKeysFromPassphrase(
-  passphrase: string
-): { masterKey: Buffer; masterSalt: Buffer } {
+function createSrtpKeysFromPassphrase(passphrase: string): {
+  masterKey: Buffer;
+  masterSalt: Buffer;
+} {
   const passphraseBuffer = Buffer.from(passphrase);
   const masterKey = Buffer.alloc(16); // 128 bits
   const masterSalt = Buffer.alloc(14); // 112 bits
@@ -340,7 +372,8 @@ function createSrtpKeysFromPassphrase(
   }
 
   for (let i = 0; i < masterSalt.length; i += 1) {
-    masterSalt[i] = passphraseBuffer[(i + masterKey.length) % passphraseBuffer.length];
+    masterSalt[i] =
+      passphraseBuffer[(i + masterKey.length) % passphraseBuffer.length];
   }
 
   return { masterKey, masterSalt };

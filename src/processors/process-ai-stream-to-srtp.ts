@@ -1,8 +1,8 @@
-import { SrtpConfig, TextDataStream } from "../interfaces";
-import { T140RtpTransport } from "../rtp/t140-rtp-transport";
-import { processT140BackspaceChars } from "../utils/backspace-processing";
-import { DEFAULT_SRTP_PORT } from "../utils/constants";
-import { extractTextFromChunk } from "../utils/extract-text";
+import { SrtpConfig, TextDataStream } from '../interfaces';
+import { T140RtpTransport } from '../rtp/t140-rtp-transport';
+import { processT140BackspaceChars } from '../utils/backspace-processing';
+import { DEFAULT_SRTP_PORT } from '../utils/constants';
+import { extractTextFromChunk } from '../utils/extract-text';
 
 /**
  * Process an AI stream and send chunks directly as T.140 over SRTP
@@ -18,18 +18,18 @@ export function processAIStreamToSrtp(
   stream: TextDataStream,
   remoteAddress: string,
   srtpConfig: SrtpConfig,
-  remotePort: number = DEFAULT_SRTP_PORT,
+  remotePort: number = DEFAULT_SRTP_PORT
 ): T140RtpTransport {
   // Create transport
   const transport = new T140RtpTransport(remoteAddress, remotePort, srtpConfig);
-  let textBuffer = ""; // Buffer to track accumulated text for backspace handling
+  let textBuffer = ''; // Buffer to track accumulated text for backspace handling
   const processBackspaces = srtpConfig.processBackspaces === true;
 
   // Setup SRTP
   transport.setupSrtp(srtpConfig);
 
   // Process the AI stream and send chunks over SRTP
-  stream.on("data", (chunk) => {
+  stream.on('data', (chunk) => {
     // Extract the text content from the chunk
     const text = extractTextFromChunk(chunk);
     if (!text) return;
@@ -38,7 +38,7 @@ export function processAIStreamToSrtp(
       // Process backspaces in the T.140 stream
       const { processedText, updatedBuffer } = processT140BackspaceChars(
         text,
-        textBuffer,
+        textBuffer
       );
       textBuffer = updatedBuffer;
 
@@ -52,19 +52,19 @@ export function processAIStreamToSrtp(
     }
   });
 
-  stream.on("end", () => {
+  stream.on('end', () => {
     // Close the transport when stream ends
     transport.close();
   });
 
   // Handle errors from the input stream
-  stream.on("error", (err) => {
-    console.error("AI Stream error:", err);
+  stream.on('error', (err) => {
+    console.error('AI Stream error:', err);
     transport.close();
   });
 
   // Forward errors from the transport to any listeners attached to the transport
-  transport.on("error", (err) => {
+  transport.on('error', (err) => {
     // The error is already emitted by the transport, no need to re-emit
     // Just log for debugging if needed
     console.error(`T140RtpTransport error (${err.type}):`, err.message);
