@@ -1,7 +1,18 @@
 import * as dgram from 'dgram';
 import { EventEmitter } from 'events';
-import { RtpConfig, SrtpConfig, T140RtpError, T140RtpErrorType, TransportStream } from '../interfaces';
-import { DEFAULT_RED_PAYLOAD_TYPE, DEFAULT_RTP_PORT, DEFAULT_T140_PAYLOAD_TYPE, RTP_HEADER_SIZE } from '../utils/constants';
+import {
+  RtpConfig,
+  SrtpConfig,
+  T140RtpError,
+  T140RtpErrorType,
+  TransportStream,
+} from '../interfaces';
+import {
+  DEFAULT_RED_PAYLOAD_TYPE,
+  DEFAULT_RTP_PORT,
+  DEFAULT_T140_PAYLOAD_TYPE,
+  RTP_HEADER_SIZE,
+} from '../utils/constants';
 import { generateSecureSSRC } from '../utils/security';
 import { createRtpPacket } from './create-rtp-packet';
 
@@ -86,14 +97,20 @@ export class T140RtpTransport extends EventEmitter {
     if (!this.customTransport) {
       // Validate remote address
       if (!remoteAddress) {
-        throw new Error('Remote address is required when no custom transport is provided');
+        throw new Error(
+          'Remote address is required when no custom transport is provided'
+        );
       }
 
       // Basic validation of the remote address format
       // This performs basic IPv4 validation and rejects obviously invalid addresses
-      if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(remoteAddress) &&
-          remoteAddress !== 'localhost' &&
-          !/^[a-zA-Z0-9][a-zA-Z0-9-]{1,61}[a-zA-Z0-9](?:\.[a-zA-Z]{2,})+$/.test(remoteAddress)) {
+      if (
+        !/^(\d{1,3}\.){3}\d{1,3}$/.test(remoteAddress) &&
+        remoteAddress !== 'localhost' &&
+        !/^[a-zA-Z0-9][a-zA-Z0-9-]{1,61}[a-zA-Z0-9](?:\.[a-zA-Z]{2,})+$/.test(
+          remoteAddress
+        )
+      ) {
         throw new Error('Invalid remote address format');
       }
 
@@ -202,10 +219,14 @@ export class T140RtpTransport extends EventEmitter {
     }
 
     // Verify that all array lengths match
-    if (packets.length !== sequenceNumbers.length || packets.length !== timestamps.length) {
+    if (
+      packets.length !== sequenceNumbers.length ||
+      packets.length !== timestamps.length
+    ) {
       this.emit('error', {
         type: T140RtpErrorType.FEC_ERROR,
-        message: 'Mismatch in FEC packet parameters: packets, sequence numbers, and timestamps must have the same length',
+        message:
+          'Mismatch in FEC packet parameters: packets, sequence numbers, and timestamps must have the same length',
       });
       return Buffer.alloc(0);
     }
@@ -505,7 +526,8 @@ export class T140RtpTransport extends EventEmitter {
           } catch (err) {
             this.emit('error', {
               type: T140RtpErrorType.ENCRYPTION_ERROR,
-              message: 'Failed to encrypt FEC packet with SRTP - packet not sent',
+              message:
+                'Failed to encrypt FEC packet with SRTP - packet not sent',
               cause: err as Error,
             });
             // Don't fall back to unencrypted - abort the send operation for security
@@ -541,7 +563,10 @@ export class T140RtpTransport extends EventEmitter {
   /**
    * Helper method to send a packet using either the custom transport or UDP socket
    */
-  private _sendPacket(packet: Buffer, callback?: (error?: Error) => void): void {
+  private _sendPacket(
+    packet: Buffer,
+    callback?: (error?: Error) => void
+  ): void {
     if (this.customTransport) {
       // Use the custom transport
       this.customTransport.send(packet, callback);
@@ -588,7 +613,8 @@ export class T140RtpTransport extends EventEmitter {
       } catch (err) {
         this.emit('error', {
           type: T140RtpErrorType.ENCRYPTION_ERROR,
-          message: 'Failed to encrypt final FEC packet with SRTP - packet not sent',
+          message:
+            'Failed to encrypt final FEC packet with SRTP - packet not sent',
           cause: err as Error,
         });
         // Don't fall back to unencrypted - abort the send operation for security
@@ -623,7 +649,10 @@ export class T140RtpTransport extends EventEmitter {
       this._sendRemainingFecPackets();
 
       // Close the socket or custom transport
-      if (this.customTransport && typeof this.customTransport.close === 'function') {
+      if (
+        this.customTransport &&
+        typeof this.customTransport.close === 'function'
+      ) {
         this.customTransport.close();
       } else if (this.udpSocket) {
         this.udpSocket.close();

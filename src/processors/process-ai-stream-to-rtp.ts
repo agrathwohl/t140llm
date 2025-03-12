@@ -9,7 +9,8 @@ import { extractTextFromChunk } from '../utils/extract-text';
  * with rate limiting to ensure compliance with specified character rate limits
  *
  * @param stream The AI stream to process
- * @param remoteAddress Remote address to send packets to (required if customTransport is not provided)
+ * @param remoteAddress Remote address to send packets to
+ *  (required if customTransport is not provided)
  * @param remotePort Remote port to send packets to (defaults to DEFAULT_RTP_PORT)
  * @param rtpConfig Configuration options including custom transport
  * @returns T140RtpTransport instance
