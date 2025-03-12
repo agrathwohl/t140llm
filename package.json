@@ -43,7 +43,6 @@
   },
   "dependencies": {
     "@types/ws": "7.4.7",
-    "dgram": "^1.0.1",
     "node-unix-socket": "^0.2.7",
     "werift-rtp": "^0.8.4",
     "ws": "^8.18.1"
