@@ -3,20 +3,29 @@ import { DEFAULT_T140_PAYLOAD_TYPE, RTP_HEADER_SIZE } from '../utils/constants';
 import { generateSecureSSRC } from '../utils/security';
 
 /**
- * Function to create RTP packet with T.140 payload
+ * Function to create RTP packet with T.140 payload or metadata
  */
 export function createRtpPacket(
   sequenceNumber: number,
   timestamp: number,
   payload: string,
-  options: Partial<RtpConfig> = {}
+  options: Partial<RtpConfig> & { metadataPacket?: boolean } = {}
 ): Buffer {
   const version = 2;
   const padding = 0;
   const extension = 0;
   const csrcCount = 0;
-  const marker = 0;
-  const payloadType = options.payloadType || DEFAULT_T140_PAYLOAD_TYPE;
+
+  // Set marker bit to 1 for metadata packets to distinguish them
+  // This allows receivers to identify metadata packets vs regular text
+  const marker = options.metadataPacket ? 1 : 0;
+
+  // Use metadata payload type if provided and this is a metadata packet
+  const payloadType =
+    options.metadataPacket && options.metadataPayloadType
+      ? options.metadataPayloadType
+      : options.payloadType || DEFAULT_T140_PAYLOAD_TYPE;
+
   // Generate secure SSRC if not provided
   const ssrc = options.ssrc || generateSecureSSRC();
 
@@ -31,6 +40,15 @@ export function createRtpPacket(
   rtpHeader.writeUInt32BE(timestamp, 4);
   rtpHeader.writeUInt32BE(ssrc, 8);
 
-  const payloadBuffer = Buffer.from(payload, 'utf-8');
+  // For metadata packets, add a small prefix to identify them on the receiving end
+  // even if marker bits are ignored by intermediaries
+  let payloadBuffer;
+  if (options.metadataPacket) {
+    // Add metadata prefix "MD:" to identify these packets
+    payloadBuffer = Buffer.from(`MD:${payload}`, 'utf-8');
+  } else {
+    payloadBuffer = Buffer.from(payload, 'utf-8');
+  }
+
   return Buffer.concat([rtpHeader, payloadBuffer]);
 }

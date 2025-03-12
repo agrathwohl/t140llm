@@ -1,5 +1,5 @@
 import * as net from 'net';
-import { RtpConfig, TextDataStream, TransportStream } from '../interfaces';
+import { LLMMetadata, RtpConfig, TextDataStream, TransportStream } from '../interfaces';
 import { createRtpPacket } from '../rtp/create-rtp-packet';
 import { processT140BackspaceChars } from '../utils/backspace-processing';
 import { DEFAULT_T140_PAYLOAD_TYPE, SEQPACKET_SOCKET_PATH } from '../utils/constants';
@@ -31,11 +31,63 @@ export function processAIStreamToDirectSocket(
   const ssrc = rtpConfig.ssrc || generateSecureSSRC(); // Use secure SSRC
   let textBuffer = ''; // Buffer to track accumulated text for backspace handling
   const processBackspaces = rtpConfig.processBackspaces === true;
+  const handleMetadata = rtpConfig.handleMetadata !== false; // Default to true
+  const metadataCallback = rtpConfig.metadataCallback;
+
+  // Function to create and send metadata packets
+  const sendMetadataPacket = (metadata: LLMMetadata) => {
+    // We use a special JSON encoding for metadata packets
+    const metadataJson = JSON.stringify({
+      type: 'metadata',
+      content: metadata,
+    });
+
+    // Create RTP packet with metadata (using a special content-type marker)
+    const metadataPacket = createRtpPacket(sequenceNumber, timestamp, metadataJson, {
+      payloadType,
+      ssrc,
+      metadataPacket: true, // Special marker for metadata packets
+    });
+
+    // Send to the transport
+    if (rtpConfig.customTransport) {
+      transport.send(metadataPacket, (err) => {
+        if (err) {
+          console.error('Error sending metadata packet to custom transport:', err);
+        }
+      });
+    } else {
+      // If using default socket
+      (transport as net.Socket).write(metadataPacket);
+    }
+
+    // Update sequence number and timestamp for next packet
+    sequenceNumber = (sequenceNumber + 1) % 65536;
+    timestamp += timestampIncrement;
+  };
 
   // Process the AI stream and send chunks directly to the transport
   stream.on('data', (chunk) => {
-    // Extract the text content from the chunk
-    const text = extractTextFromChunk(chunk);
+    // Extract the text content and metadata from the chunk
+    const { text, metadata } = extractTextFromChunk(chunk);
+
+    // If metadata is present and handling is enabled
+    if (handleMetadata && metadata) {
+      // Emit metadata event for external handling
+      stream.emit('metadata', metadata);
+
+      // Call metadata callback if provided
+      if (metadataCallback && typeof metadataCallback === 'function') {
+        metadataCallback(metadata);
+      }
+
+      // Send metadata packet if enabled
+      if (rtpConfig.sendMetadataAsPackets) {
+        sendMetadataPacket(metadata);
+      }
+    }
+
+    // Skip if no text content
     if (!text) return;
 
     let textToSend = text;
@@ -75,6 +127,24 @@ export function processAIStreamToDirectSocket(
     sequenceNumber = (sequenceNumber + 1) % 65536;
     timestamp += timestampIncrement;
   });
+
+  // Handle metadata events from the stream
+  if (handleMetadata) {
+    stream.on('metadata', (metadata: LLMMetadata) => {
+      // This handler catches metadata that might be emitted separately
+      // (not directly from the data chunks)
+
+      // Call metadata callback if provided
+      if (metadataCallback && typeof metadataCallback === 'function') {
+        metadataCallback(metadata);
+      }
+
+      // Send metadata packet if enabled
+      if (rtpConfig.sendMetadataAsPackets) {
+        sendMetadataPacket(metadata);
+      }
+    });
+  }
 
   stream.on('end', () => {
     // Close the transport when stream ends

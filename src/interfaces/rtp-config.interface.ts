@@ -1,3 +1,4 @@
+import { LLMMetadata } from './text-data-stream.interface';
 import { TransportStream } from './transport-stream.interface';
 
 /**
@@ -18,4 +19,10 @@ export interface RtpConfig {
   redPayloadType?: number; // Payload type for RED encoding
   redundancyLevel?: number; // Number of redundant T.140 blocks to include
   customTransport?: TransportStream; // Custom transport stream to use instead of UDP socket
+
+  // LLM metadata handling options
+  handleMetadata?: boolean; // Enable metadata detection and processing
+  metadataCallback?: (metadata: LLMMetadata) => void; // Callback for processing metadata
+  sendMetadataAsPackets?: boolean; // Send metadata as separate RTP packets
+  metadataPayloadType?: number; // Optional different payload type for metadata
 }

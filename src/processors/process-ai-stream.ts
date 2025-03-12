@@ -1,5 +1,5 @@
 import WebSocket from 'ws';
-import { TextDataStream } from '../interfaces';
+import { LLMMetadata, TextDataStream } from '../interfaces';
 import { processT140BackspaceChars } from '../utils/backspace-processing';
 import { WS_SERVER_PORT } from '../utils/constants';
 import { extractTextFromChunk } from '../utils/extract-text';
@@ -13,6 +13,9 @@ export function processAIStream(
   websocketUrl: string = `ws://localhost:${WS_SERVER_PORT}`,
   options: {
     processBackspaces?: boolean,
+    handleMetadata?: boolean,
+    metadataCallback?: (metadata: LLMMetadata) => void,
+    sendMetadataOverWebsocket?: boolean,
     tlsOptions?: {
       rejectUnauthorized?: boolean,    // Whether to reject connections with invalid certificates
       ca?: string,                     // Optional CA certificate content for validation
@@ -46,6 +49,8 @@ export function processAIStream(
   let isConnected = false;
   let textBuffer = ''; // Buffer to track accumulated text for backspace handling
   const processBackspaces = options.processBackspaces === true;
+  const handleMetadata = options.handleMetadata !== false; // Default to true
+  const sendMetadataOverWebsocket = options.sendMetadataOverWebsocket === true; // Default to false
 
   ws.on('open', () => {
     isConnected = true;
@@ -58,8 +63,30 @@ export function processAIStream(
 
   // Process the AI stream and send chunks through WebSocket
   stream.on('data', (chunk) => {
-    // Extract the text content from the chunk
-    const text = extractTextFromChunk(chunk);
+    // Extract both text content and metadata from the chunk
+    const { text, metadata } = extractTextFromChunk(chunk);
+
+    // If metadata is present and handling is enabled
+    if (handleMetadata && metadata) {
+      // Emit metadata event for external handling
+      stream.emit('metadata', metadata);
+
+      // Call metadata callback if provided
+      if (options.metadataCallback && typeof options.metadataCallback === 'function') {
+        options.metadataCallback(metadata);
+      }
+
+      // Optionally send metadata over WebSocket as JSON
+      if (sendMetadataOverWebsocket && isConnected) {
+        const metadataPacket = JSON.stringify({
+          type: 'metadata',
+          content: metadata,
+        });
+        ws.send(metadataPacket);
+      }
+    }
+
+    // Skip if no text content
     if (!text) return;
 
     let textToSend = text;
