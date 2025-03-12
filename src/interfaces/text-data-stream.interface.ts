@@ -18,3 +18,14 @@ export interface TextDataStream extends EventEmitter {
   on(event: 'error', listener: (error: Error) => void): this;
   on(event: 'metadata', listener: (metadata: LLMMetadata) => void): this;
 }
+
+/**
+ * Configuration options for stream processors
+ */
+export interface ProcessorOptions {
+  processBackspaces?: boolean;
+  handleMetadata?: boolean;
+  metadataCallback?: (metadata: LLMMetadata) => void;
+  sendMetadataOverTransport?: boolean;
+  preCreateConnection?: boolean;
+}

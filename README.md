@@ -24,11 +24,17 @@
     - [Secure SRTP Streaming](#secure-srtp-streaming)
     - [With Forward Error Correction](#with-forward-error-correction)
     - [With Custom Transport](#with-custom-transport)
+    - [Pre-connecting to Transport](#pre-connecting-to-transport)
 - [How It Works](#how-it-works)
 - [API Reference](#api-reference)
   - [processAIStream(stream, [websocketUrl])](#processaistreamstream-websocketurl)
   - [processAIStreamToRtp(stream, remoteAddress, [remotePort], [rtpConfig])](#processaistreamtortpstream-remoteaddress-remoteport-rtpconfig)
   - [processAIStreamToSrtp(stream, remoteAddress, srtpConfig, [remotePort])](#processaistreamtosrtpstream-remoteaddress-srtpconfig-remoteport)
+  - [processAIStreamToDirectSocket(stream, [socketPath], [rtpConfig])](#processaistreamtodirectsocketstream-socketpath-rtpconfig)
+  - [createT140WebSocketConnection(websocketUrl, [options])](#createt140websocketconnectionwebsocketurl-options)
+  - [createDirectSocketTransport(socketPath, [rtpConfig])](#createdirectsockettransportsocketpath-rtpconfig)
+  - [createT140RtpTransport(remoteAddress, [remotePort], [rtpConfig])](#createt140rtptransportremoteaddress-remoteport-rtpconfig)
+  - [createT140SrtpTransport(remoteAddress, srtpConfig, [remotePort])](#createt140srtptransportremoteaddress-srtpconfig-remoteport)
   - [createRtpPacket(sequenceNumber, timestamp, payload, [options])](#creatertppacketsequencenumber-timestamp-payload-options)
   - [createSrtpKeysFromPassphrase(passphrase)](#createsrtpkeysfrompassphrasepassphrase)
   - [T140RtpTransport](#t140rtptransport)
@@ -324,6 +330,38 @@ const transport = processAIStreamToRtp(
 // The transport will be closed automatically when the stream ends
 ```
 
+#### Pre-connecting to Transport
+
+You can establish the transport connection before the LLM stream is available, which can reduce latency when the stream starts:
+
+```typescript
+import { createT140WebSocketConnection } from "t140llm";
+
+// Create the WebSocket connection early, before the LLM stream is available
+const { connection, attachStream } = createT140WebSocketConnection('ws://localhost:5004');
+
+// Later, when the LLM stream becomes available, attach it to the existing connection
+function handleLLMResponse(llmStream) {
+  // Attach the stream to the pre-created connection
+  attachStream(llmStream, {
+    processBackspaces: true,
+    handleMetadata: true
+  });
+}
+
+// Similar pre-connection functions are available for all transport types:
+// - createDirectSocketTransport()
+// - createT140RtpTransport()
+// - createT140SrtpTransport()
+```
+
+This is especially useful in scenarios where:
+1. You want to establish the connection in advance to minimize latency
+2. You need to reuse the same transport for multiple LLM streams
+3. Your architecture needs to separate transport creation from stream processing
+
+See the [examples/pre_connect_example.js](examples/pre_connect_example.js) file for complete examples of pre-connecting with different transport types.
+
 ## Why?
 
 The T.140 protocol is a well-defined standard for transmitting text conversations
@@ -383,6 +421,64 @@ Processes an AI stream and sends the text chunks as T.140 data through a WebSock
 - `stream` <TextDataStream> The streaming data source that emits text chunks.
 - `remoteAddress` <[string][string-mdn-url]> The remote IP address to send RTP packets to. Only used if no custom transport is provided.
 - `remotePort` <[number][number-mdn-url]> Optional. The remote port to send RTP packets to. Defaults to `5004`. Only used if no custom transport is provided.
+- `rtpConfig` <RtpConfig> Optional. Configuration options for RTP:
+  - `payloadType` <[number][number-mdn-url]> Optional. The RTP payload type. Defaults to `96`.
+  - `ssrc` <[number][number-mdn-url]> Optional. The RTP synchronization source. Defaults to a cryptographically secure random value.
+  - `initialSequenceNumber` <[number][number-mdn-url]> Optional. The initial sequence number. Defaults to `0`.
+  - `initialTimestamp` <[number][number-mdn-url]> Optional. The initial timestamp. Defaults to `0`.
+  - `timestampIncrement` <[number][number-mdn-url]> Optional. The timestamp increment per packet. Defaults to `160`.
+  - `fecEnabled` <[boolean][boolean-mdn-url]> Optional. Enable Forward Error Correction. Defaults to `false`.
+  - `fecPayloadType` <[number][number-mdn-url]> Optional. The payload type for FEC packets. Defaults to `97`.
+  
+### createT140WebSocketConnection(websocketUrl, [options])
+
+- `websocketUrl` <[string][string-mdn-url]> Optional. WebSocket URL to connect to. Defaults to `ws://localhost:8765`.
+- `options` <Object> Optional. Configuration options:
+  - `tlsOptions` <Object> Optional. SSL/TLS options for secure WebSocket connections.
+- returns: <Object> An object containing:
+  - `connection` <WebSocket> The WebSocket connection
+  - `attachStream` <Function> A function to attach a TextDataStream to this connection
+
+Creates a WebSocket connection that can be used for T.140 transport. This allows establishing the connection before the LLM stream is available.
+
+### createDirectSocketTransport(socketPath, [rtpConfig])
+
+- `socketPath` <[string][string-mdn-url]> Optional. Path to the SEQPACKET socket. Defaults to the library's default socket path.
+- `rtpConfig` <RtpConfig> Optional. Configuration options for RTP (same as in processAIStreamToRtp).
+- returns: <Object> An object containing:
+  - `transport` <Socket|TransportStream> The direct socket or custom transport
+  - `attachStream` <Function> A function to attach a TextDataStream to this transport
+  - `rtpState` <Object> Current RTP state (sequence number, timestamp, ssrc)
+
+Creates a direct socket transport that can be used for T.140 RTP transmission. This allows establishing the connection before the LLM stream is available.
+
+### createT140RtpTransport(remoteAddress, [remotePort], [rtpConfig])
+
+- `remoteAddress` <[string][string-mdn-url]> The remote IP address to send RTP packets to.
+- `remotePort` <[number][number-mdn-url]> Optional. The remote port to send RTP packets to. Defaults to `5004`.
+- `rtpConfig` <RtpConfig> Optional. Configuration options for RTP (same as in processAIStreamToRtp).
+- returns: <Object> An object containing:
+  - `transport` <T140RtpTransport> The RTP transport instance
+  - `attachStream` <Function> A function to attach a TextDataStream to this transport
+
+Creates an RTP transport that can be used for T.140 transmission. This allows establishing the connection before the LLM stream is available.
+
+### createT140SrtpTransport(remoteAddress, srtpConfig, [remotePort])
+
+- `remoteAddress` <[string][string-mdn-url]> The remote IP address to send SRTP packets to.
+- `srtpConfig` <SrtpConfig> SRTP configuration with master key and salt.
+- `remotePort` <[number][number-mdn-url]> Optional. The remote port to send SRTP packets to. Defaults to `5006`.
+- returns: <Object> An object containing:
+  - `transport` <T140RtpTransport> The RTP transport instance configured for SRTP
+  - `attachStream` <Function> A function to attach a TextDataStream to this transport
+
+Creates an SRTP transport that can be used for secure T.140 transmission. This allows establishing the connection before the LLM stream is available.
+
+### processAIStreamToRtp(stream, remoteAddress, [remotePort], [rtpConfig])
+
+- `stream` <TextDataStream> The streaming data source that emits text chunks.
+- `remoteAddress` <[string][string-mdn-url]> The remote IP address to send RTP packets to.
+- `remotePort` <[number][number-mdn-url]> Optional. The remote port to send RTP packets to. Defaults to `5004`.
 - `rtpConfig` <RtpConfig> Optional. Configuration options for RTP:
   - `payloadType` <[number][number-mdn-url]> Optional. The RTP payload type. Defaults to `96`.
   - `ssrc` <[number][number-mdn-url]> Optional. The RTP synchronization source. Defaults to a cryptographically secure random value.
