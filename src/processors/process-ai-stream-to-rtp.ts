@@ -6,7 +6,7 @@ import { extractTextFromChunk } from '../utils/extract-text';
 
 /**
  * Create a T140 RTP transport that can be used to send T.140 data
- * 
+ *
  * @param remoteAddress Remote address to send packets to
  * @param remotePort Remote port to send packets to
  * @param rtpConfig RTP configuration options
@@ -22,7 +22,7 @@ export function createT140RtpTransport(
 } {
   // Create the RTP transport
   const transport = new T140RtpTransport(remoteAddress, remotePort, rtpConfig);
-  
+
   // Function to attach a stream to this transport
   const attachStream = (stream: TextDataStream, processorOptions: ProcessorOptions = {}) => {
     let textBuffer = ''; // Buffer to track accumulated text for backspace handling
@@ -64,19 +64,19 @@ export function createT140RtpTransport(
     stream.on('data', (chunk) => {
       // Extract the text content and metadata from the chunk
       const { text, metadata } = extractTextFromChunk(chunk);
-      
+
       // Handle metadata if present
       if (metadata && (processorOptions.handleMetadata !== false && rtpConfig.handleMetadata !== false)) {
         // Emit metadata event for external handling
         stream.emit('metadata', metadata);
-        
+
         // Call metadata callback if provided
         const metadataCallback = processorOptions.metadataCallback || rtpConfig.metadataCallback;
         if (metadataCallback && typeof metadataCallback === 'function') {
           metadataCallback(metadata);
         }
       }
-      
+
       // Skip if no text content
       if (!text) return;
 
@@ -131,7 +131,7 @@ export function createT140RtpTransport(
 
   return {
     transport,
-    attachStream
+    attachStream,
   };
 }
 
@@ -159,26 +159,26 @@ export function processAIStreamToRtp(
     const processorOptions: ProcessorOptions = {
       processBackspaces: rtpConfig.processBackspaces,
       handleMetadata: rtpConfig.handleMetadata,
-      metadataCallback: rtpConfig.metadataCallback
+      metadataCallback: rtpConfig.metadataCallback,
     };
-    
+
     const { attachStream } = createT140RtpTransport(remoteAddress, remotePort, rtpConfig);
     attachStream(stream, processorOptions);
-    
+
     return existingTransport;
   }
-  
+
   // Otherwise create a new transport
   const { transport, attachStream } = createT140RtpTransport(remoteAddress, remotePort, rtpConfig);
-  
+
   // Attach the stream to the transport
   const processorOptions: ProcessorOptions = {
     processBackspaces: rtpConfig.processBackspaces,
     handleMetadata: rtpConfig.handleMetadata,
-    metadataCallback: rtpConfig.metadataCallback
+    metadataCallback: rtpConfig.metadataCallback,
   };
-  
+
   attachStream(stream, processorOptions);
-  
+
   return transport;
 }

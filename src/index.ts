@@ -7,21 +7,21 @@ export * from './transport';
 
 // For backward compatibility
 import { T140RtpError, T140RtpErrorType } from './interfaces/t140-rtp-error.interface';
-import { 
+import {
   createT140WebSocketConnection,
-  processAIStream 
+  processAIStream
 } from './processors/process-ai-stream';
-import { 
+import {
   createDirectSocketTransport,
-  processAIStreamToDirectSocket 
+  processAIStreamToDirectSocket
 } from './processors/process-ai-stream-to-direct-socket';
-import { 
+import {
   createT140RtpTransport,
-  processAIStreamToRtp 
+  processAIStreamToRtp
 } from './processors/process-ai-stream-to-rtp';
-import { 
+import {
   createT140SrtpTransport,
-  processAIStreamToSrtp 
+  processAIStreamToSrtp
 } from './processors/process-ai-stream-to-srtp';
 import { createRtpPacket } from './rtp/create-rtp-packet';
 import { T140RtpTransport } from './rtp/t140-rtp-transport';
@@ -41,19 +41,19 @@ export {
   createWebSocketServer,
   WebSocketServerOptions,
   SEQPACKET_SOCKET_PATH,
-  
+
   // Main processor functions
   processAIStream,
   processAIStreamToRtp,
   processAIStreamToSrtp,
   processAIStreamToDirectSocket,
-  
+
   // Pre-create transport functions
   createT140WebSocketConnection,
   createT140RtpTransport,
   createT140SrtpTransport,
   createDirectSocketTransport,
-  
+
   // Utility functions
   createSrtpKeysFromPassphrase,
   generateSecureSSRC,
@@ -61,10 +61,10 @@ export {
   processT140BackspaceChars,
   BACKSPACE,
   T140RtpErrorType,
-  
+
   // Types
   T140RtpError,
-  
+
   // Export for testing purposes only
   extractTextFromChunk,
 };

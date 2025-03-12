@@ -6,7 +6,7 @@ import { extractTextFromChunk } from '../utils/extract-text';
 
 /**
  * Create a WebSocket connection that can be used for T.140 transport
- * 
+ *
  * @param websocketUrl The WebSocket URL to connect to
  * @param options Connection options including TLS settings
  * @returns WebSocket instance and a setup function to attach a stream
@@ -21,7 +21,7 @@ export function createT140WebSocketConnection(
       key?: string
     }
   } = {}
-): { 
+): {
   connection: WebSocket,
   attachStream: (stream: TextDataStream, processorOptions?: ProcessorOptions) => void
 } {
@@ -143,14 +143,14 @@ export function createT140WebSocketConnection(
 
   return {
     connection: ws,
-    attachStream
+    attachStream,
   };
 }
 
 /**
  * Process an AI stream and send chunks through WebSocket to T.140
  * Supports both secure (wss://) and non-secure (ws://) WebSocket connections
- * 
+ *
  * @param stream The AI stream to process
  * @param websocketUrl The WebSocket URL to connect to
  * @param options Configuration options
@@ -182,32 +182,32 @@ export function processAIStream(
       processBackspaces: options.processBackspaces,
       handleMetadata: options.handleMetadata,
       metadataCallback: options.metadataCallback,
-      sendMetadataOverTransport: options.sendMetadataOverWebsocket
+      sendMetadataOverTransport: options.sendMetadataOverWebsocket,
     };
-    
+
     const { attachStream } = createT140WebSocketConnection(websocketUrl, {
-      tlsOptions: options.tlsOptions
+      tlsOptions: options.tlsOptions,
     });
-    
+
     attachStream(stream, processorOptions);
-    
+
     return existingConnection;
   }
-  
+
   // Otherwise, create a new connection
   const { connection, attachStream } = createT140WebSocketConnection(websocketUrl, {
-    tlsOptions: options.tlsOptions
+    tlsOptions: options.tlsOptions,
   });
-  
+
   // Attach the stream to the connection
   const processorOptions: ProcessorOptions = {
     processBackspaces: options.processBackspaces,
     handleMetadata: options.handleMetadata,
     metadataCallback: options.metadataCallback,
-    sendMetadataOverTransport: options.sendMetadataOverWebsocket
+    sendMetadataOverTransport: options.sendMetadataOverWebsocket,
   };
-  
+
   attachStream(stream, processorOptions);
-  
+
   return connection;
 }

@@ -6,7 +6,7 @@ import { extractTextFromChunk } from '../utils/extract-text';
 
 /**
  * Create a T140 SRTP transport that can be used to send T.140 data securely
- * 
+ *
  * @param remoteAddress Remote address to send packets to
  * @param srtpConfig SRTP configuration including secure options
  * @param remotePort Remote port to send packets to
@@ -22,33 +22,33 @@ export function createT140SrtpTransport(
 } {
   // Create transport
   const transport = new T140RtpTransport(remoteAddress, remotePort, srtpConfig);
-  
+
   // Setup SRTP
   transport.setupSrtp(srtpConfig);
-  
+
   // Function to attach a stream to this transport
   const attachStream = (stream: TextDataStream, processorOptions: ProcessorOptions = {}) => {
     let textBuffer = ''; // Buffer to track accumulated text for backspace handling
     const processBackspaces = processorOptions.processBackspaces === true || srtpConfig.processBackspaces === true;
     const handleMetadata = processorOptions.handleMetadata !== false && srtpConfig.handleMetadata !== false; // Default to true
-    
+
     // Process the AI stream and send chunks over SRTP
     stream.on('data', (chunk) => {
       // Extract the text content and metadata from the chunk
       const { text, metadata } = extractTextFromChunk(chunk);
-      
+
       // Handle metadata if present
       if (handleMetadata && metadata) {
         // Emit metadata event for external handling
         stream.emit('metadata', metadata);
-        
+
         // Call metadata callback if provided
         const metadataCallback = processorOptions.metadataCallback || srtpConfig.metadataCallback;
         if (metadataCallback && typeof metadataCallback === 'function') {
           metadataCallback(metadata);
         }
       }
-      
+
       // Skip if no text content
       if (!text) return;
 
@@ -81,15 +81,15 @@ export function createT140SrtpTransport(
       transport.close();
     });
   };
-  
+
   // Forward errors from the transport for debugging
   transport.on('error', (err) => {
     console.error(`T140RtpTransport error (${err.type}):`, err.message);
   });
-  
+
   return {
     transport,
-    attachStream
+    attachStream,
   };
 }
 
@@ -115,34 +115,34 @@ export function processAIStreamToSrtp(
   if (existingTransport) {
     // Make sure SRTP is set up on the existing transport
     existingTransport.setupSrtp(srtpConfig);
-    
+
     const processorOptions: ProcessorOptions = {
       processBackspaces: srtpConfig.processBackspaces,
       handleMetadata: srtpConfig.handleMetadata,
-      metadataCallback: srtpConfig.metadataCallback
+      metadataCallback: srtpConfig.metadataCallback,
     };
-    
+
     const { attachStream } = createT140SrtpTransport(remoteAddress, srtpConfig, remotePort);
     attachStream(stream, processorOptions);
-    
+
     return existingTransport;
   }
-  
+
   // Otherwise create a new transport
   const { transport, attachStream } = createT140SrtpTransport(
     remoteAddress,
     srtpConfig,
     remotePort
   );
-  
+
   // Attach the stream to the transport
   const processorOptions: ProcessorOptions = {
     processBackspaces: srtpConfig.processBackspaces,
     handleMetadata: srtpConfig.handleMetadata,
-    metadataCallback: srtpConfig.metadataCallback
+    metadataCallback: srtpConfig.metadataCallback,
   };
-  
+
   attachStream(stream, processorOptions);
-  
+
   return transport;
 }

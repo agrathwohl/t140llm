@@ -8,7 +8,7 @@ import { generateSecureSSRC } from '../utils/security';
 
 /**
  * Creates a direct socket transport for T.140 RTP transmission
- * 
+ *
  * @param socketPath Path to the SEQPACKET socket
  * @param rtpConfig RTP configuration options
  * @returns The transport and a function to attach a stream to it
@@ -16,7 +16,7 @@ import { generateSecureSSRC } from '../utils/security';
 export function createDirectSocketTransport(
   socketPath: string = SEQPACKET_SOCKET_PATH,
   rtpConfig: RtpConfig = {}
-): { 
+): {
   transport: net.Socket | TransportStream,
   attachStream: (stream: TextDataStream, processorOptions?: ProcessorOptions) => void,
   rtpState: {
@@ -39,7 +39,7 @@ export function createDirectSocketTransport(
   const rtpState = {
     sequenceNumber,
     timestamp,
-    ssrc
+    ssrc,
   };
 
   // Function to attach a stream to this transport
@@ -48,7 +48,7 @@ export function createDirectSocketTransport(
     const processBackspaces = processorOptions.processBackspaces === true || rtpConfig.processBackspaces === true;
     const handleMetadata = processorOptions.handleMetadata !== false && rtpConfig.handleMetadata !== false; // Default to true
     const metadataCallback = processorOptions.metadataCallback || rtpConfig.metadataCallback;
-    
+
     // Function to create and send metadata packets
     const sendMetadataPacket = (metadata: LLMMetadata) => {
       // We use a special JSON encoding for metadata packets
@@ -184,7 +184,7 @@ export function createDirectSocketTransport(
   return {
     transport,
     attachStream,
-    rtpState
+    rtpState,
   };
 }
 
@@ -210,27 +210,27 @@ export function processAIStreamToDirectSocket(
       processBackspaces: rtpConfig.processBackspaces,
       handleMetadata: rtpConfig.handleMetadata,
       metadataCallback: rtpConfig.metadataCallback,
-      sendMetadataOverTransport: rtpConfig.sendMetadataAsPackets
+      sendMetadataOverTransport: rtpConfig.sendMetadataAsPackets,
     };
-    
+
     const { attachStream } = createDirectSocketTransport(socketPath, rtpConfig);
     attachStream(stream, processorOptions);
-    
+
     return existingTransport;
   }
-  
+
   // Otherwise create a new transport
   const { transport, attachStream } = createDirectSocketTransport(socketPath, rtpConfig);
-  
+
   // Attach the stream to the connection
   const processorOptions: ProcessorOptions = {
     processBackspaces: rtpConfig.processBackspaces,
     handleMetadata: rtpConfig.handleMetadata,
     metadataCallback: rtpConfig.metadataCallback,
-    sendMetadataOverTransport: rtpConfig.sendMetadataAsPackets
+    sendMetadataOverTransport: rtpConfig.sendMetadataAsPackets,
   };
-  
+
   attachStream(stream, processorOptions);
-  
+
   return transport;
 }
