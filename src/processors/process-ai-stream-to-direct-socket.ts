@@ -1,8 +1,17 @@
 import * as net from 'net';
-import { LLMMetadata, ProcessorOptions, RtpConfig, TextDataStream, TransportStream } from '../interfaces';
+import {
+  LLMMetadata,
+  ProcessorOptions,
+  RtpConfig,
+  TextDataStream,
+  TransportStream,
+} from '../interfaces';
 import { createRtpPacket } from '../rtp/create-rtp-packet';
 import { processT140BackspaceChars } from '../utils/backspace-processing';
-import { DEFAULT_T140_PAYLOAD_TYPE, SEQPACKET_SOCKET_PATH } from '../utils/constants';
+import {
+  DEFAULT_T140_PAYLOAD_TYPE,
+  SEQPACKET_SOCKET_PATH,
+} from '../utils/constants';
 import { extractTextFromChunk } from '../utils/extract-text';
 import { generateSecureSSRC } from '../utils/security';
 
@@ -17,16 +26,20 @@ export function createDirectSocketTransport(
   socketPath: string = SEQPACKET_SOCKET_PATH,
   rtpConfig: RtpConfig = {}
 ): {
-  transport: net.Socket | TransportStream,
-  attachStream: (stream: TextDataStream, processorOptions?: ProcessorOptions) => void,
+  transport: net.Socket | TransportStream;
+  attachStream: (
+    stream: TextDataStream,
+    processorOptions?: ProcessorOptions
+  ) => void;
   rtpState: {
-    sequenceNumber: number,
-    timestamp: number,
-    ssrc: number
-  }
+    sequenceNumber: number;
+    timestamp: number;
+    ssrc: number;
+  };
 } {
   // Create Unix SEQPACKET socket if no custom transport provided
-  const transport = rtpConfig.customTransport || net.createConnection(socketPath);
+  const transport =
+    rtpConfig.customTransport || net.createConnection(socketPath);
 
   // Initialize RTP parameters
   const sequenceNumber = rtpConfig.initialSequenceNumber || 0;
@@ -43,11 +56,19 @@ export function createDirectSocketTransport(
   };
 
   // Function to attach a stream to this transport
-  const attachStream = (stream: TextDataStream, processorOptions: ProcessorOptions = {}) => {
+  const attachStream = (
+    stream: TextDataStream,
+    processorOptions: ProcessorOptions = {}
+  ) => {
     let textBuffer = ''; // Buffer to track accumulated text for backspace handling
-    const processBackspaces = processorOptions.processBackspaces === true || rtpConfig.processBackspaces === true;
-    const handleMetadata = processorOptions.handleMetadata !== false && rtpConfig.handleMetadata !== false; // Default to true
-    const metadataCallback = processorOptions.metadataCallback || rtpConfig.metadataCallback;
+    const processBackspaces =
+      processorOptions.processBackspaces === true ||
+      rtpConfig.processBackspaces === true;
+    const handleMetadata =
+      processorOptions.handleMetadata !== false &&
+      rtpConfig.handleMetadata !== false; // Default to true
+    const metadataCallback =
+      processorOptions.metadataCallback || rtpConfig.metadataCallback;
 
     // Function to create and send metadata packets
     const sendMetadataPacket = (metadata: LLMMetadata) => {
@@ -58,17 +79,25 @@ export function createDirectSocketTransport(
       });
 
       // Create RTP packet with metadata (using a special content-type marker)
-      const metadataPacket = createRtpPacket(rtpState.sequenceNumber, rtpState.timestamp, metadataJson, {
-        payloadType,
-        ssrc,
-        metadataPacket: true, // Special marker for metadata packets
-      });
+      const metadataPacket = createRtpPacket(
+        rtpState.sequenceNumber,
+        rtpState.timestamp,
+        metadataJson,
+        {
+          payloadType,
+          ssrc,
+          metadataPacket: true, // Special marker for metadata packets
+        }
+      );
 
       // Send to the transport
       if (rtpConfig.customTransport) {
         transport.send(metadataPacket, (err) => {
           if (err) {
-            console.error('Error sending metadata packet to custom transport:', err);
+            console.error(
+              'Error sending metadata packet to custom transport:',
+              err
+            );
           }
         });
       } else {
@@ -97,7 +126,10 @@ export function createDirectSocketTransport(
         }
 
         // Send metadata packet if enabled
-        if (rtpConfig.sendMetadataAsPackets || processorOptions.sendMetadataOverTransport) {
+        if (
+          rtpConfig.sendMetadataAsPackets ||
+          processorOptions.sendMetadataOverTransport
+        ) {
           sendMetadataPacket(metadata);
         }
       }
@@ -121,10 +153,15 @@ export function createDirectSocketTransport(
       }
 
       // Create RTP packet for T.140
-      const rtpPacket = createRtpPacket(rtpState.sequenceNumber, rtpState.timestamp, textToSend, {
-        payloadType,
-        ssrc,
-      });
+      const rtpPacket = createRtpPacket(
+        rtpState.sequenceNumber,
+        rtpState.timestamp,
+        textToSend,
+        {
+          payloadType,
+          ssrc,
+        }
+      );
 
       // Send to the transport
       if (rtpConfig.customTransport) {
@@ -155,7 +192,10 @@ export function createDirectSocketTransport(
         }
 
         // Send metadata packet if enabled
-        if (rtpConfig.sendMetadataAsPackets || processorOptions.sendMetadataOverTransport) {
+        if (
+          rtpConfig.sendMetadataAsPackets ||
+          processorOptions.sendMetadataOverTransport
+        ) {
           sendMetadataPacket(metadata);
         }
       });
@@ -163,7 +203,10 @@ export function createDirectSocketTransport(
 
     stream.on('end', () => {
       // Close the transport when stream ends
-      if (rtpConfig.customTransport && typeof rtpConfig.customTransport.close === 'function') {
+      if (
+        rtpConfig.customTransport &&
+        typeof rtpConfig.customTransport.close === 'function'
+      ) {
         rtpConfig.customTransport.close();
       } else if (transport instanceof net.Socket) {
         transport.end();
@@ -173,7 +216,10 @@ export function createDirectSocketTransport(
     stream.on('error', (err) => {
       console.error('AI Stream error:', err);
       // Close the transport
-      if (rtpConfig.customTransport && typeof rtpConfig.customTransport.close === 'function') {
+      if (
+        rtpConfig.customTransport &&
+        typeof rtpConfig.customTransport.close === 'function'
+      ) {
         rtpConfig.customTransport.close();
       } else if (transport instanceof net.Socket) {
         transport.end();
@@ -220,7 +266,10 @@ export function processAIStreamToDirectSocket(
   }
 
   // Otherwise create a new transport
-  const { transport, attachStream } = createDirectSocketTransport(socketPath, rtpConfig);
+  const { transport, attachStream } = createDirectSocketTransport(
+    socketPath,
+    rtpConfig
+  );
 
   // Attach the stream to the connection
   const processorOptions: ProcessorOptions = {

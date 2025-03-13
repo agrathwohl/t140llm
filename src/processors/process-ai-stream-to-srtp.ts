@@ -17,8 +17,11 @@ export function createT140SrtpTransport(
   srtpConfig: SrtpConfig,
   remotePort: number = DEFAULT_SRTP_PORT
 ): {
-  transport: T140RtpTransport,
-  attachStream: (stream: TextDataStream, processorOptions?: ProcessorOptions) => void
+  transport: T140RtpTransport;
+  attachStream: (
+    stream: TextDataStream,
+    processorOptions?: ProcessorOptions
+  ) => void;
 } {
   // Create transport
   const transport = new T140RtpTransport(remoteAddress, remotePort, srtpConfig);
@@ -27,10 +30,17 @@ export function createT140SrtpTransport(
   transport.setupSrtp(srtpConfig);
 
   // Function to attach a stream to this transport
-  const attachStream = (stream: TextDataStream, processorOptions: ProcessorOptions = {}) => {
+  const attachStream = (
+    stream: TextDataStream,
+    processorOptions: ProcessorOptions = {}
+  ) => {
     let textBuffer = ''; // Buffer to track accumulated text for backspace handling
-    const processBackspaces = processorOptions.processBackspaces === true || srtpConfig.processBackspaces === true;
-    const handleMetadata = processorOptions.handleMetadata !== false && srtpConfig.handleMetadata !== false; // Default to true
+    const processBackspaces =
+      processorOptions.processBackspaces === true ||
+      srtpConfig.processBackspaces === true;
+    const handleMetadata =
+      processorOptions.handleMetadata !== false &&
+      srtpConfig.handleMetadata !== false; // Default to true
 
     // Process the AI stream and send chunks over SRTP
     stream.on('data', (chunk) => {
@@ -43,7 +53,8 @@ export function createT140SrtpTransport(
         stream.emit('metadata', metadata);
 
         // Call metadata callback if provided
-        const metadataCallback = processorOptions.metadataCallback || srtpConfig.metadataCallback;
+        const metadataCallback =
+          processorOptions.metadataCallback || srtpConfig.metadataCallback;
         if (metadataCallback && typeof metadataCallback === 'function') {
           metadataCallback(metadata);
         }
@@ -122,7 +133,11 @@ export function processAIStreamToSrtp(
       metadataCallback: srtpConfig.metadataCallback,
     };
 
-    const { attachStream } = createT140SrtpTransport(remoteAddress, srtpConfig, remotePort);
+    const { attachStream } = createT140SrtpTransport(
+      remoteAddress,
+      srtpConfig,
+      remotePort
+    );
     attachStream(stream, processorOptions);
 
     return existingTransport;

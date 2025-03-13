@@ -3,6 +3,7 @@
     "@reallyland/tslint-config"
   ],
   "rules": {
-    "max-classes-per-file": false
+    "max-classes-per-file": false,
+    "no-shadowed-variable": false
   }
 }

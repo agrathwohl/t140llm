@@ -17,16 +17,24 @@ export function createT140RtpTransport(
   remotePort: number = DEFAULT_RTP_PORT,
   rtpConfig: RtpConfig = {}
 ): {
-  transport: T140RtpTransport,
-  attachStream: (stream: TextDataStream, processorOptions?: ProcessorOptions) => void
+  transport: T140RtpTransport;
+  attachStream: (
+    stream: TextDataStream,
+    processorOptions?: ProcessorOptions
+  ) => void;
 } {
   // Create the RTP transport
   const transport = new T140RtpTransport(remoteAddress, remotePort, rtpConfig);
 
   // Function to attach a stream to this transport
-  const attachStream = (stream: TextDataStream, processorOptions: ProcessorOptions = {}) => {
+  const attachStream = (
+    stream: TextDataStream,
+    processorOptions: ProcessorOptions = {}
+  ) => {
     let textBuffer = ''; // Buffer to track accumulated text for backspace handling
-    const processBackspaces = processorOptions.processBackspaces === true || rtpConfig.processBackspaces === true;
+    const processBackspaces =
+      processorOptions.processBackspaces === true ||
+      rtpConfig.processBackspaces === true;
 
     // Rate limiting configuration - default to 30 characters per second
     const charRateLimit = rtpConfig.charRateLimit || 30; // characters per second
@@ -66,12 +74,17 @@ export function createT140RtpTransport(
       const { text, metadata } = extractTextFromChunk(chunk);
 
       // Handle metadata if present
-      if (metadata && (processorOptions.handleMetadata !== false && rtpConfig.handleMetadata !== false)) {
+      if (
+        metadata &&
+        processorOptions.handleMetadata !== false &&
+        rtpConfig.handleMetadata !== false
+      ) {
         // Emit metadata event for external handling
         stream.emit('metadata', metadata);
 
         // Call metadata callback if provided
-        const metadataCallback = processorOptions.metadataCallback || rtpConfig.metadataCallback;
+        const metadataCallback =
+          processorOptions.metadataCallback || rtpConfig.metadataCallback;
         if (metadataCallback && typeof metadataCallback === 'function') {
           metadataCallback(metadata);
         }
@@ -162,14 +175,22 @@ export function processAIStreamToRtp(
       metadataCallback: rtpConfig.metadataCallback,
     };
 
-    const { attachStream } = createT140RtpTransport(remoteAddress, remotePort, rtpConfig);
+    const { attachStream } = createT140RtpTransport(
+      remoteAddress,
+      remotePort,
+      rtpConfig
+    );
     attachStream(stream, processorOptions);
 
     return existingTransport;
   }
 
   // Otherwise create a new transport
-  const { transport, attachStream } = createT140RtpTransport(remoteAddress, remotePort, rtpConfig);
+  const { transport, attachStream } = createT140RtpTransport(
+    remoteAddress,
+    remotePort,
+    rtpConfig
+  );
 
   // Attach the stream to the transport
   const processorOptions: ProcessorOptions = {

@@ -15,15 +15,18 @@ export function createT140WebSocketConnection(
   websocketUrl: string = `ws://localhost:${WS_SERVER_PORT}`,
   options: {
     tlsOptions?: {
-      rejectUnauthorized?: boolean,
-      ca?: string,
-      cert?: string,
-      key?: string
-    }
+      rejectUnauthorized?: boolean;
+      ca?: string;
+      cert?: string;
+      key?: string;
+    };
   } = {}
 ): {
-  connection: WebSocket,
-  attachStream: (stream: TextDataStream, processorOptions?: ProcessorOptions) => void
+  connection: WebSocket;
+  attachStream: (
+    stream: TextDataStream,
+    processorOptions?: ProcessorOptions
+  ) => void;
 } {
   // Setup WebSocket connection with TLS options if provided and URL is WSS
   const isSecure = websocketUrl.startsWith('wss://');
@@ -31,7 +34,8 @@ export function createT140WebSocketConnection(
 
   // If this is a secure connection and TLS options are provided
   if (isSecure && options.tlsOptions) {
-    wsOptions.rejectUnauthorized = options.tlsOptions.rejectUnauthorized !== false;
+    wsOptions.rejectUnauthorized =
+      options.tlsOptions.rejectUnauthorized !== false;
 
     // Add CA certificate if provided
     if (options.tlsOptions.ca) {
@@ -53,12 +57,16 @@ export function createT140WebSocketConnection(
   });
 
   // Function to attach a stream to this connection
-  const attachStream = (stream: TextDataStream, processorOptions: ProcessorOptions = {}) => {
+  const attachStream = (
+    stream: TextDataStream,
+    processorOptions: ProcessorOptions = {}
+  ) => {
     let buffer = '';
     let textBuffer = ''; // Buffer to track accumulated text for backspace handling
     const processBackspaces = processorOptions.processBackspaces === true;
     const handleMetadata = processorOptions.handleMetadata !== false; // Default to true
-    const sendMetadataOverWebsocket = processorOptions.sendMetadataOverTransport === true; // Default to false
+    const sendMetadataOverWebsocket =
+      processorOptions.sendMetadataOverTransport === true; // Default to false
 
     // If the WebSocket is already connected, update connection state
     if (ws.readyState === WebSocket.OPEN) {
@@ -86,7 +94,10 @@ export function createT140WebSocketConnection(
         stream.emit('metadata', metadata);
 
         // Call metadata callback if provided
-        if (processorOptions.metadataCallback && typeof processorOptions.metadataCallback === 'function') {
+        if (
+          processorOptions.metadataCallback &&
+          typeof processorOptions.metadataCallback === 'function'
+        ) {
           processorOptions.metadataCallback(metadata);
         }
 
@@ -142,8 +153,8 @@ export function createT140WebSocketConnection(
   };
 
   return {
-    connection: ws,
     attachStream,
+    connection: ws,
   };
 }
 
@@ -161,24 +172,24 @@ export function processAIStream(
   stream: TextDataStream,
   websocketUrl: string = `ws://localhost:${WS_SERVER_PORT}`,
   options: {
-    processBackspaces?: boolean,
-    handleMetadata?: boolean,
-    metadataCallback?: (metadata: LLMMetadata) => void,
-    sendMetadataOverWebsocket?: boolean,
-    preCreateConnection?: boolean,
+    processBackspaces?: boolean;
+    handleMetadata?: boolean;
+    metadataCallback?: (metadata: LLMMetadata) => void;
+    sendMetadataOverWebsocket?: boolean;
+    preCreateConnection?: boolean;
     tlsOptions?: {
-      rejectUnauthorized?: boolean,    // Whether to reject connections with invalid certificates
-      ca?: string,                     // Optional CA certificate content for validation
-      cert?: string,                   // Optional client certificate content
-      key?: string                     // Optional client private key content
-    }
+      rejectUnauthorized?: boolean; // Whether to reject connections with invalid certificates
+      ca?: string; // Optional CA certificate content for validation
+      cert?: string; // Optional client certificate content
+      key?: string; // Optional client private key content
+    };
   } = {},
   existingConnection?: WebSocket
 ): WebSocket {
   // If an existing connection is provided, use it
   if (existingConnection) {
     // Create a connection manager and attach the stream
-    const processorOptions: ProcessorOptions = {
+    const processorOptionsExisting: ProcessorOptions = {
       processBackspaces: options.processBackspaces,
       handleMetadata: options.handleMetadata,
       metadataCallback: options.metadataCallback,
@@ -189,15 +200,18 @@ export function processAIStream(
       tlsOptions: options.tlsOptions,
     });
 
-    attachStream(stream, processorOptions);
+    attachStream(stream, processorOptionsExisting);
 
     return existingConnection;
   }
 
   // Otherwise, create a new connection
-  const { connection, attachStream } = createT140WebSocketConnection(websocketUrl, {
-    tlsOptions: options.tlsOptions,
-  });
+  const { connection, attachStream } = createT140WebSocketConnection(
+    websocketUrl,
+    {
+      tlsOptions: options.tlsOptions,
+    }
+  );
 
   // Attach the stream to the connection
   const processorOptions: ProcessorOptions = {
