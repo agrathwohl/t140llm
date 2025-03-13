@@ -37,95 +37,75 @@ export function createDirectSocketTransport(
     ssrc: number;
   };
 } {
-  // Create Unix SEQPACKET socket if no custom transport provided
   const transport =
     rtpConfig.customTransport || net.createConnection(socketPath);
 
-  // Initialize RTP parameters
   const sequenceNumber = rtpConfig.initialSequenceNumber || 0;
   const timestamp = rtpConfig.initialTimestamp || 0;
   const timestampIncrement = rtpConfig.timestampIncrement || 160;
   const payloadType = rtpConfig.payloadType || DEFAULT_T140_PAYLOAD_TYPE;
-  const ssrc = rtpConfig.ssrc || generateSecureSSRC(); // Use secure SSRC
+  const ssrc = rtpConfig.ssrc || generateSecureSSRC();
 
-  // Track RTP state for external access
   const rtpState = {
     sequenceNumber,
     timestamp,
     ssrc,
   };
 
-  // Function to attach a stream to this transport
+  const sendPacket = (packet: Buffer) => {
+    if (rtpConfig.customTransport) {
+      transport.send(packet, (err) => {
+        if (err) {
+          console.error('Error sending packet to custom transport:', err);
+        }
+      });
+    } else {
+      (transport as net.Socket).write(packet);
+    }
+  };
+
+  const sendMetadataPacket = (metadata: LLMMetadata) => {
+    const metadataJson = JSON.stringify({
+      type: 'metadata',
+      content: metadata,
+    });
+
+    const metadataPacket = createRtpPacket(
+      rtpState.sequenceNumber,
+      rtpState.timestamp,
+      metadataJson,
+      {
+        payloadType,
+        ssrc,
+        metadataPacket: true,
+      }
+    );
+
+    sendPacket(metadataPacket);
+
+    rtpState.sequenceNumber = (rtpState.sequenceNumber + 1) % 65536;
+    rtpState.timestamp += timestampIncrement;
+  };
+
   const attachStream = (
     stream: TextDataStream,
     processorOptions: ProcessorOptions = {}
   ) => {
-    let textBuffer = ''; // Buffer to track accumulated text for backspace handling
+    let textBuffer = '';
     const processBackspaces =
-      processorOptions.processBackspaces === true ||
-      rtpConfig.processBackspaces === true;
+      processorOptions.processBackspaces ?? rtpConfig.processBackspaces;
     const handleMetadata =
-      processorOptions.handleMetadata !== false &&
-      rtpConfig.handleMetadata !== false; // Default to true
+      processorOptions.handleMetadata ?? rtpConfig.handleMetadata ?? true;
     const metadataCallback =
       processorOptions.metadataCallback || rtpConfig.metadataCallback;
 
-    // Function to create and send metadata packets
-    const sendMetadataPacket = (metadata: LLMMetadata) => {
-      // We use a special JSON encoding for metadata packets
-      const metadataJson = JSON.stringify({
-        type: 'metadata',
-        content: metadata,
-      });
-
-      // Create RTP packet with metadata (using a special content-type marker)
-      const metadataPacket = createRtpPacket(
-        rtpState.sequenceNumber,
-        rtpState.timestamp,
-        metadataJson,
-        {
-          payloadType,
-          ssrc,
-          metadataPacket: true, // Special marker for metadata packets
-        }
-      );
-
-      // Send to the transport
-      if (rtpConfig.customTransport) {
-        transport.send(metadataPacket, (err) => {
-          if (err) {
-            console.error(
-              'Error sending metadata packet to custom transport:',
-              err
-            );
-          }
-        });
-      } else {
-        // If using default socket
-        (transport as net.Socket).write(metadataPacket);
-      }
-
-      // Update sequence number and timestamp for next packet
-      rtpState.sequenceNumber = (rtpState.sequenceNumber + 1) % 65536;
-      rtpState.timestamp += timestampIncrement;
-    };
-
-    // Process the AI stream and send chunks directly to the transport
     stream.on('data', (chunk) => {
-      // Extract the text content and metadata from the chunk
       const { text, metadata } = extractTextFromChunk(chunk);
 
-      // If metadata is present and handling is enabled
       if (handleMetadata && metadata) {
-        // Emit metadata event for external handling
         stream.emit('metadata', metadata);
+        metadataCallback?.(metadata);
 
-        // Call metadata callback if provided
-        if (metadataCallback && typeof metadataCallback === 'function') {
-          metadataCallback(metadata);
-        }
-
-        // Send metadata packet if enabled
         if (
           rtpConfig.sendMetadataAsPackets ||
           processorOptions.sendMetadataOverTransport
@@ -134,13 +114,11 @@ export function createDirectSocketTransport(
         }
       }
 
-      // Skip if no text content
       if (!text) return;
 
       let textToSend = text;
 
       if (processBackspaces) {
-        // Process backspaces in the T.140 stream
         const { processedText, updatedBuffer } = processT140BackspaceChars(
           text,
           textBuffer
@@ -148,11 +126,9 @@ export function createDirectSocketTransport(
         textBuffer = updatedBuffer;
         textToSend = processedText;
 
-        // Skip if nothing to send
         if (!textToSend) return;
       }
 
-      // Create RTP packet for T.140
       const rtpPacket = createRtpPacket(
         rtpState.sequenceNumber,
         rtpState.timestamp,
@@ -163,35 +139,16 @@ export function createDirectSocketTransport(
         }
       );
 
-      // Send to the transport
-      if (rtpConfig.customTransport) {
-        transport.send(rtpPacket, (err) => {
-          if (err) {
-            console.error('Error sending packet to custom transport:', err);
-          }
-        });
-      } else {
-        // If using default socket
-        (transport as net.Socket).write(rtpPacket);
-      }
+      sendPacket(rtpPacket);
 
-      // Update sequence number and timestamp for next packet
       rtpState.sequenceNumber = (rtpState.sequenceNumber + 1) % 65536;
       rtpState.timestamp += timestampIncrement;
     });
 
-    // Handle metadata events from the stream
     if (handleMetadata) {
       stream.on('metadata', (metadata: LLMMetadata) => {
-        // This handler catches metadata that might be emitted separately
-        // (not directly from the data chunks)
+        metadataCallback?.(metadata);
 
-        // Call metadata callback if provided
-        if (metadataCallback && typeof metadataCallback === 'function') {
-          metadataCallback(metadata);
-        }
-
-        // Send metadata packet if enabled
         if (
           rtpConfig.sendMetadataAsPackets ||
           processorOptions.sendMetadataOverTransport
@@ -201,29 +158,18 @@ export function createDirectSocketTransport(
       });
     }
 
-    stream.on('end', () => {
-      // Close the transport when stream ends
-      if (
-        rtpConfig.customTransport &&
-        typeof rtpConfig.customTransport.close === 'function'
-      ) {
+    const closeTransport = () => {
+      if (rtpConfig.customTransport?.close) {
         rtpConfig.customTransport.close();
       } else if (transport instanceof net.Socket) {
         transport.end();
       }
-    });
+    };
 
+    stream.on('end', closeTransport);
     stream.on('error', (err) => {
       console.error('AI Stream error:', err);
-      // Close the transport
-      if (
-        rtpConfig.customTransport &&
-        typeof rtpConfig.customTransport.close === 'function'
-      ) {
-        rtpConfig.customTransport.close();
-      } else if (transport instanceof net.Socket) {
-        transport.end();
-      }
+      closeTransport();
     });
   };
 
@@ -250,7 +196,6 @@ export function processAIStreamToDirectSocket(
   rtpConfig: RtpConfig = {},
   existingTransport?: net.Socket | TransportStream
 ): net.Socket | TransportStream {
-  // If an existing transport is provided, use it
   if (existingTransport) {
     const processorOptions: ProcessorOptions = {
       processBackspaces: rtpConfig.processBackspaces,
@@ -265,13 +210,11 @@ export function processAIStreamToDirectSocket(
     return existingTransport;
   }
 
-  // Otherwise create a new transport
   const { transport, attachStream } = createDirectSocketTransport(
     socketPath,
     rtpConfig
   );
 
-  // Attach the stream to the connection
   const processorOptions: ProcessorOptions = {
     processBackspaces: rtpConfig.processBackspaces,
     handleMetadata: rtpConfig.handleMetadata,
