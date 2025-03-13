@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>t140llm - Real-time Text Streaming for LLMs</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism.min.css">
+    <style>
+        :root {
+            --primary-color: #6200ea;
+            --secondary-color: #3700b3;
+            --accent-color: #bb86fc;
+        }
+        body {
+            padding-top: 60px;
+            position: relative;
+        }
+        .navbar {
+            background-color: var(--primary-color);
+        }
+        .navbar-brand {
+            font-weight: bold;
+        }
+        .section {
+            padding: 60px 0;
+            scroll-margin-top: 60px;
+        }
+        .section:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+        h1, h2, h3, h4 {
+            font-weight: 700;
+            margin-bottom: 1rem;
+        }
+        pre {
+            border-radius: 0.5rem;
+            margin: 1.5rem 0;
+        }
+        .btn-primary {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+        .btn-primary:hover {
+            background-color: var(--secondary-color);
+            border-color: var(--secondary-color);
+        }
+        .feature-icon {
+            font-size: 2rem;
+            color: var(--accent-color);
+            margin-bottom: 1rem;
+        }
+        .sidebar {
+            position: sticky;
+            top: 80px;
+        }
+        .sidebar .nav-link {
+            padding: 0.25rem 0;
+            color: #495057;
+        }
+        .sidebar .nav-link.active {
+            color: var(--primary-color);
+            font-weight: bold;
+        }
+        @media (max-width: 768px) {
+            .sidebar {
+                position: static;
+            }
+        }
+        .footer {
+            background-color: #212529;
+            color: white;
+            padding: 2rem 0;
+        }
+        .api-item {
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            border-radius: 0.5rem;
+            border: 1px solid #dee2e6;
+        }
+        .api-item h3 {
+            margin-top: 0;
+        }
+        .api-signature {
+            background-color: #f8f9fa;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            font-family: monospace;
+            margin: 1rem 0;
+        }
+        .navbar-nav .nav-link {
+            color: rgba(255, 255, 255, 0.9) !important;
+        }
+        .navbar-nav .nav-link:hover {
+            color: white !important;
+        }
+    </style>
+</head>
+<body data-bs-spy="scroll" data-bs-target="#sidebar">
+    <nav class="navbar navbar-expand-lg navbar-dark fixed-top">
+        <div class="container">
+            <a class="navbar-brand" href="#">t140llm</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="#overview">Overview</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#installation">Installation</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#api">API</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#examples">Examples</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="https://github.com/agrathwohl/t140llm" target="_blank">GitHub</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="row">
+            <div class="col-md-9">
+                <section id="overview" class="section">
+                    <h1>t140llm</h1>
+                    <p class="lead">A TypeScript library that converts LLM streaming responses into T.140 real-time text format for SIP, WebRTC, and (S)RTP applications.</p>
+                    
+                    <div class="row mt-5">
+                        <div class="col-md-4 text-center">
+                            <div class="feature-icon">⚡</div>
+                            <h4>Low Latency</h4>
+                            <p>Provides approximately 10% lower latency compared to traditional WebSockets.</p>
+                        </div>
+                        <div class="col-md-4 text-center">
+                            <div class="feature-icon">🔄</div>
+                            <h4>Multiple Transports</h4>
+                            <p>WebSocket, direct RTP/SRTP, and UNIX sockets support.</p>
+                        </div>
+                        <div class="col-md-4 text-center">
+                            <div class="feature-icon">🛡️</div>
+                            <h4>Forward Error Correction</h4>
+                            <p>Built-in FEC for packet loss recovery in network transmissions.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="row mt-4">
+                        <div class="col-md-4 text-center">
+                            <div class="feature-icon">🔧</div>
+                            <h4>Customizable</h4>
+                            <p>Support for custom transport implementations and metadata handling.</p>
+                        </div>
+                        <div class="col-md-4 text-center">
+                            <div class="feature-icon">🔌</div>
+                            <h4>Compatible</h4>
+                            <p>Works with Vercel AI SDK, Anthropic Claude, and OpenAI APIs.</p>
+                        </div>
+                        <div class="col-md-4 text-center">
+                            <div class="feature-icon">📝</div>
+                            <h4>T.140 Compliant</h4>
+                            <p>Formats text according to T.140 standard for real-time text applications.</p>
+                        </div>
+                    </div>
+                </section>
+
+                <section id="installation" class="section">
+                    <h2>Installation</h2>
+                    <p>Install t140llm using npm:</p>
+                    <pre><code class="language-bash">npm install t140llm</code></pre>
+                    
+                    <h3>Requirements</h3>
+                    <ul>
+                        <li>Node.js ≥ 10.18.1</li>
+                        <li>npm ≥ 6.13.4</li>
+                    </ul>
+                    
+                    <h3>Dependencies</h3>
+                    <p>The library has the following key dependencies:</p>
+                    <ul>
+                        <li><code>ws</code> - For WebSocket functionality</li>
+                        <li><code>node-unix-socket</code> - For UNIX socket communication</li>
+                        <li><code>werift-rtp</code> - For RTP/SRTP packet handling</li>
+                    </ul>
+                </section>
+
+                <section id="api" class="section">
+                    <h2>API Reference</h2>
+                    
+                    <h3 class="mb-4">Core Functions</h3>
+                    
+                    <div class="api-item">
+                        <h3>processAIStream</h3>
+                        <div class="api-signature">processAIStream(stream: TextDataStream, websocketUrl?: string, options?: ProcessorOptions): Promise&lt;void&gt;</div>
+                        <p>Processes an AI text stream and sends it to a WebSocket server.</p>
+                        <h4>Parameters:</h4>
+                        <ul>
+                            <li><code>stream</code>: <code>TextDataStream</code> - The AI text stream to process</li>
+                            <li><code>websocketUrl</code>: <code>string</code> (optional) - The WebSocket server URL</li>
+                            <li><code>options</code>: <code>ProcessorOptions</code> (optional) - Processing options</li>
+                        </ul>
+                        <h4>Returns:</h4>
+                        <p>A Promise that resolves when the stream has been completely processed.</p>
+                    </div>
+                    
+                    <div class="api-item">
+                        <h3>processAIStreamToRtp</h3>
+                        <div class="api-signature">processAIStreamToRtp(stream: TextDataStream, remoteAddress: string, remotePort?: number, rtpConfig?: RtpConfig): Promise&lt;void&gt;</div>
+                        <p>Processes an AI text stream and sends it directly using RTP.</p>
+                        <h4>Parameters:</h4>
+                        <ul>
+                            <li><code>stream</code>: <code>TextDataStream</code> - The AI text stream to process</li>
+                            <li><code>remoteAddress</code>: <code>string</code> - The remote IP address</li>
+                            <li><code>remotePort</code>: <code>number</code> (optional) - The remote port (default: 5004)</li>
+                            <li><code>rtpConfig</code>: <code>RtpConfig</code> (optional) - RTP configuration options</li>
+                        </ul>
+                        <h4>Returns:</h4>
+                        <p>A Promise that resolves when the stream has been completely processed.</p>
+                    </div>
+                    
+                    <div class="api-item">
+                        <h3>processAIStreamToSrtp</h3>
+                        <div class="api-signature">processAIStreamToSrtp(stream: TextDataStream, remoteAddress: string, srtpConfig: SrtpConfig, remotePort?: number): Promise&lt;void&gt;</div>
+                        <p>Processes an AI text stream and sends it using Secure RTP (SRTP).</p>
+                        <h4>Parameters:</h4>
+                        <ul>
+                            <li><code>stream</code>: <code>TextDataStream</code> - The AI text stream to process</li>
+                            <li><code>remoteAddress</code>: <code>string</code> - The remote IP address</li>
+                            <li><code>srtpConfig</code>: <code>SrtpConfig</code> - SRTP configuration including security keys</li>
+                            <li><code>remotePort</code>: <code>number</code> (optional) - The remote port (default: 5004)</li>
+                        </ul>
+                        <h4>Returns:</h4>
+                        <p>A Promise that resolves when the stream has been completely processed.</p>
+                    </div>
+                    
+                    <div class="api-item">
+                        <h3>processAIStreamToDirectSocket</h3>
+                        <div class="api-signature">processAIStreamToDirectSocket(stream: TextDataStream, socketPath?: string, rtpConfig?: RtpConfig): Promise&lt;void&gt;</div>
+                        <p>Processes an AI text stream and sends it to a UNIX socket.</p>
+                        <h4>Parameters:</h4>
+                        <ul>
+                            <li><code>stream</code>: <code>TextDataStream</code> - The AI text stream to process</li>
+                            <li><code>socketPath</code>: <code>string</code> (optional) - Path to the UNIX socket</li>
+                            <li><code>rtpConfig</code>: <code>RtpConfig</code> (optional) - RTP configuration options</li>
+                        </ul>
+                        <h4>Returns:</h4>
+                        <p>A Promise that resolves when the stream has been completely processed.</p>
+                    </div>
+                    
+                    <h3 class="mt-5 mb-4">Pre-Connection Functions</h3>
+                    
+                    <div class="api-item">
+                        <h3>createT140WebSocketConnection</h3>
+                        <div class="api-signature">createT140WebSocketConnection(websocketUrl?: string): TransportStream</div>
+                        <p>Creates a WebSocket transport connection without starting data transmission.</p>
+                        <h4>Parameters:</h4>
+                        <ul>
+                            <li><code>websocketUrl</code>: <code>string</code> (optional) - The WebSocket server URL</li>
+                        </ul>
+                        <h4>Returns:</h4>
+                        <p>A TransportStream instance ready for use with processAIStream.</p>
+                    </div>
+                    
+                    <div class="api-item">
+                        <h3>createT140RtpTransport</h3>
+                        <div class="api-signature">createT140RtpTransport(remoteAddress: string, remotePort?: number, rtpConfig?: RtpConfig): TransportStream</div>
+                        <p>Creates an RTP transport connection without starting data transmission.</p>
+                        <h4>Parameters:</h4>
+                        <ul>
+                            <li><code>remoteAddress</code>: <code>string</code> - The remote IP address</li>
+                            <li><code>remotePort</code>: <code>number</code> (optional) - The remote port</li>
+                            <li><code>rtpConfig</code>: <code>RtpConfig</code> (optional) - RTP configuration options</li>
+                        </ul>
+                        <h4>Returns:</h4>
+                        <p>A TransportStream instance ready for use with processAIStream.</p>
+                    </div>
+                    
+                    <div class="api-item">
+                        <h3>createT140SrtpTransport</h3>
+                        <div class="api-signature">createT140SrtpTransport(remoteAddress: string, srtpConfig: SrtpConfig, remotePort?: number): TransportStream</div>
+                        <p>Creates an SRTP transport connection without starting data transmission.</p>
+                        <h4>Parameters:</h4>
+                        <ul>
+                            <li><code>remoteAddress</code>: <code>string</code> - The remote IP address</li>
+                            <li><code>srtpConfig</code>: <code>SrtpConfig</code> - SRTP configuration including security keys</li>
+                            <li><code>remotePort</code>: <code>number</code> (optional) - The remote port</li>
+                        </ul>
+                        <h4>Returns:</h4>
+                        <p>A TransportStream instance ready for use with processAIStream.</p>
+                    </div>
+                    
+                    <div class="api-item">
+                        <h3>createDirectSocketTransport</h3>
+                        <div class="api-signature">createDirectSocketTransport(socketPath?: string): TransportStream</div>
+                        <p>Creates a direct socket transport connection without starting data transmission.</p>
+                        <h4>Parameters:</h4>
+                        <ul>
+                            <li><code>socketPath</code>: <code>string</code> (optional) - Path to the UNIX socket</li>
+                        </ul>
+                        <h4>Returns:</h4>
+                        <p>A TransportStream instance ready for use with processAIStream.</p>
+                    </div>
+                    
+                    <h3 class="mt-5 mb-4">Interfaces</h3>
+                    
+                    <div class="api-item">
+                        <h3>TransportStream</h3>
+                        <p>Interface for custom transport implementations. Required for creating custom transports.</p>
+                        <div class="api-signature">interface TransportStream {
+  send(data: Buffer, callback?: (error?: Error) => void): void;
+  close?(): void;
+}</div>
+                    </div>
+                    
+                    <div class="api-item">
+                        <h3>TextDataStream</h3>
+                        <p>Interface for streaming data sources such as LLM outputs.</p>
+                        <div class="api-signature">interface TextDataStream {
+  on(event: 'data', listener: (chunk: any) => void): this;
+  on(event: 'end', listener: () => void): this;
+  on(event: 'error', listener: (err: Error) => void): this;
+  on(event: 'metadata', listener: (metadata: LLMMetadata) => void): this;
+}</div>
+                    </div>
+                    
+                    <div class="api-item">
+                        <h3>LLMMetadata</h3>
+                        <p>Interface for LLM metadata such as tool calls.</p>
+                        <div class="api-signature">interface LLMMetadata {
+  type: 'tool_call' | 'tool_result' | 'custom' | string;
+  content: any;
+  id?: string;
+}</div>
+                    </div>
+                    
+                    <div class="api-item">
+                        <h3>ProcessorOptions</h3>
+                        <p>Configuration options for stream processors.</p>
+                        <div class="api-signature">interface ProcessorOptions {
+  processBackspaces?: boolean;
+  handleMetadata?: boolean;
+  metadataCallback?: (metadata: LLMMetadata) => void;
+  sendMetadataOverTransport?: boolean;
+  preCreateConnection?: boolean;
+}</div>
+                    </div>
+                    
+                    <div class="api-item">
+                        <h3>RtpConfig</h3>
+                        <p>Configuration interface for RTP.</p>
+                        <div class="api-signature">interface RtpConfig {
+  payloadType?: number;
+  ssrc?: number;
+  sequenceNumber?: number;
+  timestamp?: number;
+  enableFec?: boolean;
+  fecInterval?: number;
+  processBackspaces?: boolean;
+  rateLimit?: number;
+  redundancy?: number;
+  handleMetadata?: boolean;
+  metadataCallback?: (metadata: LLMMetadata) => void;
+  sendMetadataOverTransport?: boolean;
+}</div>
+                    </div>
+                    
+                    <div class="api-item">
+                        <h3>SrtpConfig</h3>
+                        <p>Configuration for SRTP security, extends RtpConfig.</p>
+                        <div class="api-signature">interface SrtpConfig extends RtpConfig {
+  masterKey: Buffer;
+  masterSalt: Buffer;
+  profile?: number;
+  isSRTCP?: boolean;
+}</div>
+                    </div>
+                </section>
+
+                <section id="examples" class="section">
+                    <h2>Examples</h2>
+                    
+                    <h3>Basic WebSocket Example</h3>
+                    <pre><code class="language-javascript">import { processAIStream } from 't140llm';
+import { anthropic } from '@anthropic/sdk';
+
+// Create an Anthropic client
+const client = new anthropic.Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
+
+// Create a streaming response
+const response = await client.messages.create({
+  model: 'claude-3-sonnet-20240229',
+  max_tokens: 1000,
+  stream: true,
+  messages: [{ role: 'user', content: 'Tell me about T.140 protocol' }],
+});
+
+// Process the stream with t140llm
+await processAIStream(response, 'ws://localhost:8080');
+</code></pre>
+                    
+                    <h3>Direct RTP Example</h3>
+                    <pre><code class="language-javascript">import { processAIStreamToRtp } from 't140llm';
+import { anthropic } from '@anthropic/sdk';
+
+const client = new anthropic.Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
+
+const response = await client.messages.create({
+  model: 'claude-3-sonnet-20240229',
+  max_tokens: 1000,
+  stream: true,
+  messages: [{ role: 'user', content: 'Tell me about real-time communication' }],
+});
+
+// Process the stream using RTP to a specific IP and port
+await processAIStreamToRtp(response, '192.168.1.100', 5004, {
+  enableFec: true,  // Enable Forward Error Correction
+  processBackspaces: true,  // Process backspace characters
+});
+</code></pre>
+                    
+                    <h3>SRTP Secure Transport Example</h3>
+                    <pre><code class="language-javascript">import { processAIStreamToSrtp } from 't140llm';
+import { anthropic } from '@anthropic/sdk';
+import { randomBytes } from 'crypto';
+
+const client = new anthropic.Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
+
+// Generate secure keys for SRTP
+const masterKey = randomBytes(16);  // 128 bits
+const masterSalt = randomBytes(14); // 112 bits
+
+const response = await client.messages.create({
+  model: 'claude-3-sonnet-20240229',
+  max_tokens: 1000,
+  stream: true,
+  messages: [{ role: 'user', content: 'Tell me about secure communications' }],
+});
+
+// Process the stream using secure SRTP
+await processAIStreamToSrtp(response, '192.168.1.100', {
+  masterKey,
+  masterSalt,
+  enableFec: true,
+});
+</code></pre>
+                    
+                    <h3>Direct Socket Example</h3>
+                    <pre><code class="language-javascript">import { processAIStreamToDirectSocket } from 't140llm';
+import { anthropic } from '@anthropic/sdk';
+
+const client = new anthropic.Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
+
+const response = await client.messages.create({
+  model: 'claude-3-sonnet-20240229',
+  max_tokens: 1000,
+  stream: true,
+  messages: [{ role: 'user', content: 'Tell me about UNIX sockets' }],
+});
+
+// Process the stream using a direct UNIX socket
+await processAIStreamToDirectSocket(response, '/tmp/t140llm.sock');
+</code></pre>
+                    
+                    <h3>Pre-Connection Example</h3>
+                    <pre><code class="language-javascript">import { createT140RtpTransport, processAIStream } from 't140llm';
+import { anthropic } from '@anthropic/sdk';
+
+// Pre-create the transport before starting the LLM request
+const transport = createT140RtpTransport('192.168.1.100', 5004, {
+  enableFec: true,
+});
+
+// Later, when you're ready to process the stream:
+const client = new anthropic.Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
+
+const response = await client.messages.create({
+  model: 'claude-3-sonnet-20240229',
+  max_tokens: 1000,
+  stream: true,
+  messages: [{ role: 'user', content: 'Tell me about latency optimization' }],
+});
+
+// Use the pre-created transport
+await processAIStream(response, null, {
+  preCreateConnection: true,
+  transport: transport,
+});
+</code></pre>
+                    
+                    <h3>Metadata Handling Example</h3>
+                    <pre><code class="language-javascript">import { processAIStreamToRtp } from 't140llm';
+import { anthropic } from '@anthropic/sdk';
+
+const client = new anthropic.Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
+
+const response = await client.messages.create({
+  model: 'claude-3-opus-20240229',
+  max_tokens: 1000,
+  stream: true,
+  messages: [{ role: 'user', content: 'What's the weather in San Francisco?' }],
+  tools: [
+    {
+      name: 'get_weather',
+      description: 'Get the current weather in a location',
+      input_schema: {
+        type: 'object',
+        properties: {
+          location: {
+            type: 'string',
+            description: 'The city and state, e.g. San Francisco, CA',
+          },
+          unit: { 
+            type: 'string', 
+            enum: ['celsius', 'fahrenheit'],
+            description: 'The temperature unit to use'
+          },
+        },
+        required: ['location'],
+      },
+    },
+  ],
+});
+
+// Process the stream with metadata handling
+await processAIStreamToRtp(response, '192.168.1.100', 5004, {
+  handleMetadata: true,
+  metadataCallback: (metadata) => {
+    if (metadata.type === 'tool_call') {
+      console.log('Tool call received:', metadata.content);
+      // Here you would handle the tool call and send back results
+    }
+  },
+  sendMetadataOverTransport: true, // Send metadata in the RTP stream
+});
+</code></pre>
+                    
+                    <h3>Custom Transport Example</h3>
+                    <pre><code class="language-javascript">import { processAIStream } from 't140llm';
+import { anthropic } from '@anthropic/sdk';
+
+// Implement a custom transport
+const customTransport = {
+  send: (data, callback) => {
+    // Custom logic to transport the data
+    console.log('Sending data:', data.toString('utf8'));
+    
+    // For example, you might send to a proprietary protocol
+    // myCustomProtocol.send(data);
+    
+    // Call the callback when done
+    if (callback) callback();
+  },
+  close: () => {
+    // Custom cleanup logic
+    console.log('Transport closed');
+  }
+};
+
+const client = new anthropic.Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
+
+const response = await client.messages.create({
+  model: 'claude-3-sonnet-20240229',
+  max_tokens: 1000,
+  stream: true,
+  messages: [{ role: 'user', content: 'Tell me about custom protocols' }],
+});
+
+// Use the custom transport
+await processAIStream(response, null, {
+  transport: customTransport,
+});
+</code></pre>
+                </section>
+                
+                <section id="advanced" class="section">
+                    <h2>Advanced Usage</h2>
+                    
+                    <h3>Forward Error Correction (FEC)</h3>
+                    <p>The library includes built-in Forward Error Correction to recover from packet loss during transmission. Enable it by setting <code>enableFec: true</code> in your RTP configuration:</p>
+                    
+                    <pre><code class="language-javascript">await processAIStreamToRtp(stream, remoteAddress, remotePort, {
+  enableFec: true,
+  fecInterval: 5, // Send FEC packets every 5 data packets
+});</code></pre>
+                    
+                    <h3>Backspace Processing</h3>
+                    <p>Some LLMs might emit backspace characters during text generation. The library can handle these automatically:</p>
+                    
+                    <pre><code class="language-javascript">await processAIStream(stream, websocketUrl, {
+  processBackspaces: true,
+});</code></pre>
+                    
+                    <h3>Rate Limiting</h3>
+                    <p>You can control the transmission rate of packets:</p>
+                    
+                    <pre><code class="language-javascript">await processAIStreamToRtp(stream, remoteAddress, remotePort, {
+  rateLimit: 30, // Limit to 30 packets per second
+});</code></pre>
+                    
+                    <h3>Redundancy</h3>
+                    <p>For improved reliability, you can enable packet redundancy:</p>
+                    
+                    <pre><code class="language-javascript">await processAIStreamToRtp(stream, remoteAddress, remotePort, {
+  redundancy: 2, // Send each packet twice
+});</code></pre>
+                    
+                    <h3>Custom RTP Configuration</h3>
+                    <p>You can customize various RTP parameters:</p>
+                    
+                    <pre><code class="language-javascript">await processAIStreamToRtp(stream, remoteAddress, remotePort, {
+  payloadType: 98,     // Custom payload type (default: 96)
+  ssrc: 12345678,      // Custom SSRC (default: random)
+  sequenceNumber: 100, // Starting sequence number (default: random)
+  timestamp: 0,        // Starting timestamp (default: current time)
+});</code></pre>
+                </section>
+            </div>
+            
+            <div class="col-md-3 d-none d-md-block">
+                <div class="sidebar" id="sidebar">
+                    <h5>On This Page</h5>
+                    <nav class="nav flex-column">
+                        <a class="nav-link" href="#overview">Overview</a>
+                        <a class="nav-link" href="#installation">Installation</a>
+                        <a class="nav-link" href="#api">API Reference</a>
+                        <a class="nav-link ps-3" href="#api">Core Functions</a>
+                        <a class="nav-link ps-3" href="#api">Pre-Connection Functions</a>
+                        <a class="nav-link ps-3" href="#api">Interfaces</a>
+                        <a class="nav-link" href="#examples">Examples</a>
+                        <a class="nav-link" href="#advanced">Advanced Usage</a>
+                    </nav>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <footer class="footer mt-5">
+        <div class="container">
+            <div class="row">
+                <div class="col-md-6">
+                    <h4>t140llm</h4>
+                    <p>A TypeScript library for converting LLM streams to T.140 real-time text format.</p>
+                </div>
+                <div class="col-md-6 text-md-end">
+                    <p>
+                        <a href="https://github.com/agrathwohl/t140llm" class="text-white">GitHub</a> |
+                        <a href="https://github.com/agrathwohl/t140llm/issues" class="text-white">Issues</a> |
+                        <a href="#" class="text-white">NPM</a>
+                    </p>
+                    <p>Released under the MIT License</p>
+                </div>
+            </div>
+        </div>
+    </footer>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-javascript.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-typescript.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-bash.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const scrollSpy = new bootstrap.ScrollSpy(document.body, {
+                target: '#sidebar'
+            });
+            
+            // Initialize code highlighting
+            Prism.highlightAll();
+        });
+    </script>
+</body>
+</html>
