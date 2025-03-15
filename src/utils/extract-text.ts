@@ -52,7 +52,7 @@ export function extractTextFromChunk(chunk: any): ExtractedContent {
   }
 
   // Extract reasoning for OpenAI specifically in message format
-  if (chunk?.choices?.[0]?.message?.role === 'assistant' && 
+  if (chunk?.choices?.[0]?.message?.role === 'assistant' &&
       chunk?.choices?.[0]?.message?.reasoning) {
     result.metadata = {
       type: 'reasoning',
