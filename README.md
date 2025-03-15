@@ -164,6 +164,69 @@ const stream = await anthropic.messages.create({
 processAIStream(stream);
 ```
 
+#### With Mistral AI
+
+```typescript
+import { processAIStream } from "t140llm";
+import MistralClient from "@mistralai/mistralai";
+
+// Initialize Mistral client
+const mistral = new MistralClient({
+  apiKey: process.env.MISTRAL_API_KEY,
+});
+
+// Create a streaming response
+const stream = await mistral.chat({
+  model: "mistral-large-latest",
+  messages: [{ role: "user", content: "Write a short story." }],
+  stream: true,
+});
+
+// Process the stream and convert to T.140
+processAIStream(stream);
+```
+
+#### With Cohere
+
+```typescript
+import { processAIStream } from "t140llm";
+import { CohereClient } from "cohere-ai";
+
+// Initialize Cohere client
+const cohere = new CohereClient({
+  token: process.env.COHERE_API_KEY,
+});
+
+// Create a streaming response
+const stream = await cohere.chatStream({
+  model: "command",
+  message: "Write a short story.",
+});
+
+// Process the stream and convert to T.140
+processAIStream(stream);
+```
+
+#### With Ollama
+
+```typescript
+import { processAIStream } from "t140llm";
+import { Ollama } from "ollama";
+
+// Initialize Ollama client
+const ollama = new Ollama();
+
+// Create a streaming response
+const stream = await ollama.chat({
+  model: "llama3",
+  messages: [{ role: "user", content: "Write a short story." }],
+  stream: true,
+});
+
+// Process the stream and convert to T.140
+processAIStream(stream);
+```
+
 #### Direct RTP Streaming
 
 For direct RTP streaming without needing a WebSocket intermediary:
