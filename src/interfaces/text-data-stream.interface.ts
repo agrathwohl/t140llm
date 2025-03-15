@@ -1,10 +1,10 @@
 import { EventEmitter } from 'events';
 
 /**
- * Interface representing LLM metadata like tool calls and custom data
+ * Interface representing LLM metadata like tool calls, reasoning, and custom data
  */
 export interface LLMMetadata {
-  type: 'tool_call' | 'tool_result' | 'custom' | string;
+  type: 'tool_call' | 'tool_result' | 'custom' | 'reasoning' | string;
   content: any;
   id?: string;
 }

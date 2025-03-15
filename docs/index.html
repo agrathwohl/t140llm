@@ -167,6 +167,24 @@
                             <p>Formats text according to T.140 standard for real-time text applications.</p>
                         </div>
                     </div>
+                    
+                    <div class="row mt-4">
+                        <div class="col-md-4 text-center">
+                            <div class="feature-icon">🧠</div>
+                            <h4>Reasoning Streams</h4>
+                            <p>Extracts and processes LLM reasoning alongside text for transparency.</p>
+                        </div>
+                        <div class="col-md-4 text-center">
+                            <div class="feature-icon">🛠️</div>
+                            <h4>Tool Integration</h4>
+                            <p>Handles tool calls and tool results from modern LLM interactions.</p>
+                        </div>
+                        <div class="col-md-4 text-center">
+                            <div class="feature-icon">🔀</div>
+                            <h4>Multi-Channel</h4>
+                            <p>Support for separate transport channels for text, reasoning, and tools.</p>
+                        </div>
+                    </div>
                 </section>
 
                 <section id="installation" class="section">
@@ -330,9 +348,9 @@
                     
                     <div class="api-item">
                         <h3>LLMMetadata</h3>
-                        <p>Interface for LLM metadata such as tool calls.</p>
+                        <p>Interface for LLM metadata such as tool calls, reasoning, and other structured data.</p>
                         <div class="api-signature">interface LLMMetadata {
-  type: 'tool_call' | 'tool_result' | 'custom' | string;
+  type: 'tool_call' | 'tool_result' | 'custom' | 'reasoning' | string;
   content: any;
   id?: string;
 }</div>
@@ -502,6 +520,39 @@ await processAIStream(response, null, {
 });
 </code></pre>
                     
+                    <h3>Reasoning Stream Example</h3>
+                    <pre><code class="language-javascript">import { processAIStream } from 't140llm';
+import { anthropic } from '@anthropic/sdk';
+
+const client = new anthropic.Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
+
+// Create a streaming response with reasoning enabled
+const response = await client.messages.create({
+  model: 'claude-3-sonnet-20240229',
+  max_tokens: 1000,
+  stream: true,
+  messages: [{ role: 'user', content: 'Solve this math problem: 2x + 5 = 13' }],
+});
+
+// Set up separate handling for reasoning and text
+const handleMetadata = (metadata) => {
+  if (metadata.type === 'reasoning') {
+    console.log('Reasoning process:', metadata.content);
+    // You could send this to a different UI element to show
+    // the LLM's step-by-step thinking process
+  }
+};
+
+// Process the stream with reasoning handling
+await processAIStream(response, 'ws://localhost:8080', {
+  handleMetadata: true,
+  metadataCallback: handleMetadata,
+  sendMetadataOverWebsocket: true, // Send reasoning over WebSocket too
+});
+</code></pre>
+
                     <h3>Metadata Handling Example</h3>
                     <pre><code class="language-javascript">import { processAIStreamToRtp } from 't140llm';
 import { anthropic } from '@anthropic/sdk';
@@ -593,6 +644,52 @@ await processAIStream(response, null, {
                 
                 <section id="advanced" class="section">
                     <h2>Advanced Usage</h2>
+                    
+                    <h3>Separate Transports for Reasoning</h3>
+                    <p>You can use separate transport channels for text and reasoning data:</p>
+                    
+                    <pre><code class="language-javascript">import { processAIStreamToDirectSocket } from 't140llm';
+import { EventEmitter } from 'events';
+import * as fs from 'fs';
+
+// Create two separate socket paths
+const textSocketPath = '/tmp/llm-text.sock';
+const reasoningSocketPath = '/tmp/llm-reasoning.sock';
+
+// Clean up any existing sockets
+if (fs.existsSync(textSocketPath)) fs.unlinkSync(textSocketPath);
+if (fs.existsSync(reasoningSocketPath)) fs.unlinkSync(reasoningSocketPath);
+
+// Create a separate socket for reasoning data
+const reasoningSocket = processAIStreamToDirectSocket(
+  new EventEmitter(), // Empty stream to initialize socket
+  reasoningSocketPath
+);
+
+// Create custom reasoning metadata handler that sends to separate socket
+const handleMetadata = (metadata) => {
+  if (metadata.type === 'reasoning') {
+    reasoningSocket.write(JSON.stringify({
+      type: 'reasoning',
+      content: metadata.content
+    }) + '\n');
+  }
+};
+
+// Process the main text stream with the reasoning handler
+const textSocket = processAIStreamToDirectSocket(
+  llmStream,
+  textSocketPath, 
+  {
+    handleMetadata: true,
+    metadataCallback: handleMetadata
+  }
+);
+
+// This allows different clients to connect to each socket:
+// - One client can show the final LLM text output
+// - Another client can show the reasoning process
+</code></pre>
                     
                     <h3>Forward Error Correction (FEC)</h3>
                     <p>The library includes built-in Forward Error Correction to recover from packet loss during transmission. Enable it by setting <code>enableFec: true</code> in your RTP configuration:</p>

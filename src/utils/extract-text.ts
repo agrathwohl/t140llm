@@ -43,6 +43,23 @@ export function extractTextFromChunk(chunk: any): ExtractedContent {
     };
   }
 
+  // Extract reasoning from LLM responses
+  if (chunk?.choices?.[0]?.delta?.reasoning || chunk?.delta?.reasoning) {
+    result.metadata = {
+      type: 'reasoning',
+      content: chunk?.choices?.[0]?.delta?.reasoning || chunk?.delta?.reasoning,
+    };
+  }
+
+  // Extract reasoning for OpenAI specifically in message format
+  if (chunk?.choices?.[0]?.message?.role === 'assistant' && 
+      chunk?.choices?.[0]?.message?.reasoning) {
+    result.metadata = {
+      type: 'reasoning',
+      content: chunk.choices[0].message.reasoning,
+    };
+  }
+
   // Extract custom metadata if present
   if (chunk?.metadata || chunk?.delta?.metadata) {
     result.metadata = {

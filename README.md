@@ -72,9 +72,10 @@ $ npm install --save t140llm
 - [x] Vercel AI SDK
 - [x] Anthropic SDK
 - [x] OpenAI SDK
-- [ ] Reasoning Support
+- [x] Reasoning Support
 - [ ] Binary Data
-- [ ] Tools
+- [x] Tools
+- [x] LLM Output Metadata
 - [ ] PDFs/Documents
 - [ ] Images
 - [ ] Video
@@ -303,14 +304,14 @@ class MyCustomTransport {
     // Send the data using your custom transport mechanism
     console.log(`Sending ${data.length} bytes`);
     // ...your sending logic here...
-    
+
     // Call the callback when done (or with an error if it failed)
     if (callback) callback();
   }
-  
+
   close() {
     // Clean up resources when done
-    console.log('Transport closed');
+    console.log("Transport closed");
   }
 }
 
@@ -338,14 +339,16 @@ You can establish the transport connection before the LLM stream is available, w
 import { createT140WebSocketConnection } from "t140llm";
 
 // Create the WebSocket connection early, before the LLM stream is available
-const { connection, attachStream } = createT140WebSocketConnection('ws://localhost:5004');
+const { connection, attachStream } = createT140WebSocketConnection(
+  "ws://localhost:5004",
+);
 
 // Later, when the LLM stream becomes available, attach it to the existing connection
 function handleLLMResponse(llmStream) {
   // Attach the stream to the pre-created connection
   attachStream(llmStream, {
     processBackspaces: true,
-    handleMetadata: true
+    handleMetadata: true,
   });
 }
 
@@ -356,11 +359,49 @@ function handleLLMResponse(llmStream) {
 ```
 
 This is especially useful in scenarios where:
+
 1. You want to establish the connection in advance to minimize latency
 2. You need to reuse the same transport for multiple LLM streams
 3. Your architecture needs to separate transport creation from stream processing
 
 See the [examples/pre_connect_example.js](examples/pre_connect_example.js) file for complete examples of pre-connecting with different transport types.
+
+#### With Reasoning Stream Processing
+
+Some LLM providers can stream their reasoning process as separate metadata alongside the generated text. This allows applications to show both the LLM's thought process and its final output:
+
+```typescript
+import { processAIStream } from "t140llm";
+import Anthropic from "@anthropic-ai/sdk";
+
+// Initialize Anthropic client
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
+
+// Create a streaming response with reasoning
+const stream = await anthropic.messages.create({
+  model: "claude-3-sonnet-20240229",
+  messages: [{ role: "user", content: "Solve this math problem: 2x + 5 = 13" }],
+  stream: true,
+});
+
+// Create a custom reasoning handler
+const handleReasoning = (metadata) => {
+  if (metadata.type === 'reasoning') {
+    console.log('REASONING:', metadata.content);
+  }
+};
+
+// Process the stream with reasoning handling
+processAIStream(stream, 'ws://localhost:3000', {
+  handleMetadata: true,
+  metadataCallback: handleReasoning,
+  sendMetadataOverWebsocket: true  // Also send reasoning over WebSocket
+});
+```
+
+For more advanced usage, including separate transports for text and reasoning, see the [examples/reasoning_example.js](examples/reasoning_example.js) and [examples/reasoning_direct_socket_example.js](examples/reasoning_direct_socket_example.js) examples.
 
 ## Why?
 
@@ -429,7 +470,7 @@ Processes an AI stream and sends the text chunks as T.140 data through a WebSock
   - `timestampIncrement` <[number][number-mdn-url]> Optional. The timestamp increment per packet. Defaults to `160`.
   - `fecEnabled` <[boolean][boolean-mdn-url]> Optional. Enable Forward Error Correction. Defaults to `false`.
   - `fecPayloadType` <[number][number-mdn-url]> Optional. The payload type for FEC packets. Defaults to `97`.
-  
+
 ### createT140WebSocketConnection(websocketUrl, [options])
 
 - `websocketUrl` <[string][string-mdn-url]> Optional. WebSocket URL to connect to. Defaults to `ws://localhost:8765`.
