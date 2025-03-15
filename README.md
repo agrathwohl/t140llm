@@ -72,6 +72,11 @@ $ npm install --save t140llm
 - [x] Vercel AI SDK
 - [x] Anthropic SDK
 - [x] OpenAI SDK
+- [x] Cohere
+- [x] Mistral
+- [ ] Amazon (Bedrock)
+- [ ] Google (Gemini/PaLM)
+- [x] Ollama
 - [x] Reasoning Support
 - [ ] Binary Data
 - [x] Tools
@@ -388,16 +393,16 @@ const stream = await anthropic.messages.create({
 
 // Create a custom reasoning handler
 const handleReasoning = (metadata) => {
-  if (metadata.type === 'reasoning') {
-    console.log('REASONING:', metadata.content);
+  if (metadata.type === "reasoning") {
+    console.log("REASONING:", metadata.content);
   }
 };
 
 // Process the stream with reasoning handling
-processAIStream(stream, 'ws://localhost:3000', {
+processAIStream(stream, "ws://localhost:3000", {
   handleMetadata: true,
   metadataCallback: handleReasoning,
-  sendMetadataOverWebsocket: true  // Also send reasoning over WebSocket
+  sendMetadataOverWebsocket: true, // Also send reasoning over WebSocket
 });
 ```
 

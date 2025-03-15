@@ -34,6 +34,26 @@ export function extractTextFromChunk(chunk: any): ExtractedContent {
     };
   }
 
+  // Extract metadata from Mistral AI tool calls (similar to OpenAI format)
+  if (chunk?.delta?.tool_calls) {
+    const toolCall = chunk.delta.tool_calls[0];
+    result.metadata = {
+      type: 'tool_call',
+      id: toolCall.id || undefined,
+      content: toolCall,
+    };
+  }
+
+  // Extract metadata from Cohere tool calls
+  if (chunk?.tool_calls) {
+    const toolCall = chunk.tool_calls[0];
+    result.metadata = {
+      type: 'tool_call',
+      id: toolCall.id || undefined,
+      content: toolCall,
+    };
+  }
+
   // Extract metadata from Anthropic tool results (tool_results)
   if (chunk?.type === 'tool_result' || chunk?.delta?.type === 'tool_result') {
     result.metadata = {
@@ -83,6 +103,24 @@ export function extractTextFromChunk(chunk: any): ExtractedContent {
   // Handle Anthropic API format
   if (chunk?.delta?.text !== undefined) {
     result.text = chunk.delta.text;
+    return result;
+  }
+
+  // Handle Mistral AI format (similar to OpenAI but with slight differences)
+  if (chunk?.delta?.content !== undefined) {
+    result.text = chunk.delta.content;
+    return result;
+  }
+
+  // Handle Cohere format
+  if (chunk?.text !== undefined) {
+    result.text = chunk.text;
+    return result;
+  }
+
+  // Handle Ollama format
+  if (chunk?.response !== undefined) {
+    result.text = chunk.response;
     return result;
   }
 
