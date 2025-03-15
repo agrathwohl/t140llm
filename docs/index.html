@@ -159,7 +159,7 @@
                         <div class="col-md-4 text-center">
                             <div class="feature-icon">🔌</div>
                             <h4>Compatible</h4>
-                            <p>Works with Vercel AI SDK, Anthropic Claude, and OpenAI APIs.</p>
+                            <p>Works with OpenAI, Anthropic, Mistral AI, Cohere, Ollama, and Vercel AI SDK.</p>
                         </div>
                         <div class="col-md-4 text-center">
                             <div class="feature-icon">📝</div>
@@ -402,25 +402,144 @@
                 <section id="examples" class="section">
                     <h2>Examples</h2>
                     
-                    <h3>Basic WebSocket Example</h3>
+                    <h3>LLM Provider Support</h3>
+                    <p>t140llm supports various LLM providers including OpenAI, Anthropic Claude, Mistral AI, Cohere, and Ollama. Here are examples with different providers:</p>
+                    
+                    <h4>With OpenAI</h4>
                     <pre><code class="language-javascript">import { processAIStream } from 't140llm';
-import { anthropic } from '@anthropic/sdk';
+import OpenAI from 'openai';
 
-// Create an Anthropic client
-const client = new anthropic.Anthropic({
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+// Create a streaming response
+const stream = await openai.chat.completions.create({
+  model: "gpt-4",
+  messages: [{ role: "user", content: "Write a short story." }],
+  stream: true,
+});
+
+// Process the stream and convert to T.140
+processAIStream(stream);
+</code></pre>
+
+                    <h4>With Anthropic Claude</h4>
+                    <pre><code class="language-javascript">import { processAIStream } from 't140llm';
+import Anthropic from "@anthropic-ai/sdk";
+
+// Initialize Anthropic client
+const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
 // Create a streaming response
-const response = await client.messages.create({
-  model: 'claude-3-sonnet-20240229',
-  max_tokens: 1000,
+const stream = await anthropic.messages.create({
+  model: "claude-3-sonnet-20240229",
+  messages: [{ role: "user", content: "Write a short story." }],
   stream: true,
-  messages: [{ role: 'user', content: 'Tell me about T.140 protocol' }],
 });
 
 // Process the stream with t140llm
-await processAIStream(response, 'ws://localhost:8080');
+await processAIStream(stream, 'ws://localhost:8080');
+</code></pre>
+
+                    <h4>With Mistral AI</h4>
+                    <pre><code class="language-javascript">import { processAIStream } from 't140llm';
+import MistralClient from "@mistralai/mistralai";
+
+// Initialize Mistral client
+const mistral = new MistralClient({
+  apiKey: process.env.MISTRAL_API_KEY,
+});
+
+// Create a streaming response
+const stream = await mistral.chat({
+  model: "mistral-large-latest",
+  messages: [{ role: "user", content: "Write a short story." }],
+  stream: true,
+});
+
+// Process the stream and convert to T.140
+processAIStream(stream);
+</code></pre>
+
+                    <h4>With Cohere</h4>
+                    <pre><code class="language-javascript">import { processAIStream } from 't140llm';
+import { CohereClient } from "cohere-ai";
+
+// Initialize Cohere client
+const cohere = new CohereClient({
+  token: process.env.COHERE_API_KEY,
+});
+
+// Create a streaming response
+const stream = await cohere.chatStream({
+  model: "command",
+  message: "Write a short story.",
+});
+
+// Process the stream and convert to T.140
+processAIStream(stream);
+</code></pre>
+
+                    <h4>With Ollama</h4>
+                    <pre><code class="language-javascript">import { processAIStream } from 't140llm';
+import { EventEmitter } from 'events';
+
+// For Ollama, you'd typically use fetch
+async function streamFromOllama() {
+  const response = await fetch('http://localhost:11434/api/generate', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'llama3',
+      prompt: 'Write a short story',
+      stream: true,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Ollama API error: ${response.statusText}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  
+  // Create an event emitter to simulate a stream
+  const stream = new EventEmitter();
+  
+  // Process chunks as they arrive
+  const processChunks = async () => {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        stream.emit('end');
+        break;
+      }
+      const text = decoder.decode(value);
+      const lines = text.split('\n').filter(line => line.trim());
+      
+      for (const line of lines) {
+        try {
+          const json = JSON.parse(line);
+          stream.emit('data', json);
+        } catch (e) {
+          console.error('Error parsing Ollama response:', e);
+        }
+      }
+    }
+  };
+  
+  processChunks().catch(err => stream.emit('error', err));
+  return stream;
+}
+
+// Get the stream and process it
+const stream = await streamFromOllama();
+processAIStream(stream);
 </code></pre>
                     
                     <h3>Direct RTP Example</h3>
