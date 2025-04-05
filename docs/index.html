@@ -185,6 +185,24 @@
                             <p>Support for separate transport channels for text, reasoning, and tools.</p>
                         </div>
                     </div>
+                    
+                    <div class="row mt-4">
+                        <div class="col-md-4 text-center">
+                            <div class="feature-icon">🥷</div>
+                            <h4>Steganography</h4>
+                            <p>Hide RTP packets within cover media for added security and obfuscation.</p>
+                        </div>
+                        <div class="col-md-4 text-center">
+                            <div class="feature-icon">🤖</div>
+                            <h4>LLM-Generated Algorithms</h4>
+                            <p>Dynamically create steganography algorithms using LLMs.</p>
+                        </div>
+                        <div class="col-md-4 text-center">
+                            <div class="feature-icon">🔄</div>
+                            <h4>Customizable Encoding</h4>
+                            <p>Extend the steganography system with custom algorithms and transport layers.</p>
+                        </div>
+                    </div>
                 </section>
 
                 <section id="installation" class="section">
@@ -396,6 +414,101 @@
   profile?: number;
   isSRTCP?: boolean;
 }</div>
+                    </div>
+                    
+                    <h3 class="mt-5 mb-4">Steganography</h3>
+
+                    <div class="api-item">
+                        <h3>StegConfig</h3>
+                        <p>Configuration interface for steganography.</p>
+                        <div class="api-signature">interface StegConfig {
+  enabled: boolean;
+  encodeMode: 'llm' | 'fixed';
+  coverMedia?: Buffer[];
+  prompt?: string;
+  algorithm?: string;
+  seed?: string;
+  encodingRatio?: number;
+  llmProvider?: any;
+}</div>
+                        <h4>Properties:</h4>
+                        <ul>
+                            <li><code>enabled</code>: <code>boolean</code> - Enable/disable steganography</li>
+                            <li><code>encodeMode</code>: <code>'llm' | 'fixed'</code> - Use LLM-generated or built-in algorithm</li>
+                            <li><code>coverMedia</code>: <code>Buffer[]</code> - Array of cover media buffers</li>
+                            <li><code>prompt</code>: <code>string</code> - Custom prompt for LLM algorithm generation</li>
+                            <li><code>algorithm</code>: <code>string</code> - Custom algorithm code</li>
+                            <li><code>seed</code>: <code>string</code> - Random seed for deterministic algorithm generation</li>
+                            <li><code>encodingRatio</code>: <code>number</code> - Percentage of packet to encode (0-100)</li>
+                            <li><code>llmProvider</code>: <code>any</code> - Custom LLM provider for algorithm generation</li>
+                        </ul>
+                    </div>
+
+                    <div class="api-item">
+                        <h3>StegTransport</h3>
+                        <p>A transport wrapper that adds steganography capabilities.</p>
+                        <div class="api-signature">class StegTransport implements TransportStream {
+  constructor(innerTransport: TransportStream, config: StegConfig);
+  send(data: Buffer, callback?: (error?: Error) => void): void;
+  close(): void;
+  encode(data: Buffer, cover: Buffer): Buffer;
+  decode(stegData: Buffer): Buffer;
+  getConfig(): StegConfig;
+  updateConfig(config: Partial<StegConfig>): void;
+}</div>
+                        <h4>Methods:</h4>
+                        <ul>
+                            <li><code>encode</code> - Apply steganography to hide data in cover media</li>
+                            <li><code>decode</code> - Extract hidden data from steganographically modified media</li>
+                            <li><code>getConfig</code> - Get current steganography configuration</li>
+                            <li><code>updateConfig</code> - Update steganography configuration</li>
+                        </ul>
+                    </div>
+
+                    <div class="api-item">
+                        <h3>RtpConfigWithSteg</h3>
+                        <p>Extended RTP configuration with steganography support.</p>
+                        <div class="api-signature">interface RtpConfigWithSteg extends RtpConfig {
+  steganography?: StegConfig;
+}</div>
+                    </div>
+
+                    <div class="api-item">
+                        <h3>createStegT140RtpTransport</h3>
+                        <div class="api-signature">createStegT140RtpTransport(
+  remoteAddress: string,
+  remotePort?: number,
+  config?: RtpConfigWithSteg
+): T140RtpTransport</div>
+                        <p>Creates an RTP transport with steganography support.</p>
+                        <h4>Parameters:</h4>
+                        <ul>
+                            <li><code>remoteAddress</code>: <code>string</code> - The remote IP address</li>
+                            <li><code>remotePort</code>: <code>number</code> (optional) - The remote port</li>
+                            <li><code>config</code>: <code>RtpConfigWithSteg</code> (optional) - RTP configuration with steganography options</li>
+                        </ul>
+                        <h4>Returns:</h4>
+                        <p>A T140RtpTransport instance with steganography capabilities.</p>
+                    </div>
+
+                    <div class="api-item">
+                        <h3>processAIStreamToStegRtp</h3>
+                        <div class="api-signature">processAIStreamToStegRtp(
+  stream: TextDataStream,
+  remoteAddress: string,
+  remotePort?: number,
+  config?: RtpConfigWithSteg
+): T140RtpTransport</div>
+                        <p>Processes an AI text stream and sends it using RTP with steganography.</p>
+                        <h4>Parameters:</h4>
+                        <ul>
+                            <li><code>stream</code>: <code>TextDataStream</code> - The AI text stream to process</li>
+                            <li><code>remoteAddress</code>: <code>string</code> - The remote IP address</li>
+                            <li><code>remotePort</code>: <code>number</code> (optional) - The remote port</li>
+                            <li><code>config</code>: <code>RtpConfigWithSteg</code> (optional) - RTP configuration with steganography options</li>
+                        </ul>
+                        <h4>Returns:</h4>
+                        <p>A T140RtpTransport instance with steganography capabilities.</p>
                     </div>
                 </section>
 
@@ -764,6 +877,266 @@ await processAIStream(response, null, {
                 <section id="advanced" class="section">
                     <h2>Advanced Usage</h2>
                     
+                    <h3>Steganography with LLM-Generated Algorithm</h3>
+                    <p>Use an LLM to dynamically generate steganography algorithms:</p>
+                    <pre><code class="language-javascript">import { processAIStreamToStegRtp } from 't140llm';
+import OpenAI from 'openai';
+import { readFileSync } from 'fs';
+
+// Initialize OpenAI for algorithm generation
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+// Load some cover media (in this example, image files)
+const coverMedia = [
+  readFileSync('./cover-image-1.jpg'),
+  readFileSync('./cover-image-2.jpg'),
+  readFileSync('./cover-image-3.jpg'),
+];
+
+// Generate a steganography algorithm
+const prompt = `Create a steganography algorithm in JavaScript that:
+1. Takes a data Buffer and cover media Buffer
+2. Hides the data within the cover media
+3. Returns the modified cover with hidden data
+4. Includes a corresponding decode function
+5. Uses pure JavaScript with no external dependencies`;
+
+// Get the algorithm from OpenAI
+const response = await openai.chat.completions.create({
+  model: "gpt-4",
+  messages: [{ role: "user", content: prompt }],
+  temperature: 0.5,
+});
+
+const algorithm = response.choices[0].message.content;
+
+// Create a streaming request from Claude or any other LLM
+const textStream = await claude.messages.create({
+  model: 'claude-3-sonnet-20240229',
+  max_tokens: 1000,
+  stream: true,
+  messages: [{ role: 'user', content: 'Tell me about steganography techniques' }],
+});
+
+// Process the stream with the LLM-generated steganography algorithm
+const transport = processAIStreamToStegRtp(textStream, '192.168.1.100', 5004, {
+  steganography: {
+    enabled: true,
+    encodeMode: 'llm',
+    algorithm, // Use the LLM-generated algorithm
+    coverMedia,
+    seed: 'unique-random-seed-123'
+  },
+  enableFec: true, // Enable Forward Error Correction for reliability
+});</code></pre>
+
+                    <h3>Custom Steganography Transport</h3>
+                    <p>Create a custom steganography transport with advanced features:</p>
+                    <pre><code class="language-javascript">import { StegTransport, createT140RtpTransport } from 't140llm';
+import OpenAI from 'openai';
+
+// Create a custom steganography transport that extends the base StegTransport
+class EnhancedStegTransport extends StegTransport {
+  constructor(innerTransport, config) {
+    super(innerTransport, config);
+    this.stats = {
+      packetsEncoded: 0,
+      bytesHidden: 0,
+      avgBitChanges: 0
+    };
+  }
+  
+  // Override the encode method to add statistics
+  encode(data, cover) {
+    console.log(`Encoding ${data.length} bytes into ${cover.length} bytes cover`);
+    this.stats.packetsEncoded++;
+    this.stats.bytesHidden += data.length;
+    
+    // Call the parent encode method
+    const encoded = super.encode(data, cover);
+    
+    // Calculate bit changes for statistics
+    const changes = this.countBitChanges(cover, encoded);
+    this.stats.avgBitChanges = 
+      (this.stats.avgBitChanges * (this.stats.packetsEncoded - 1) + changes) / 
+      this.stats.packetsEncoded;
+    
+    return encoded;
+  }
+  
+  // Helper to count how many bits were changed during encoding
+  countBitChanges(original, modified) {
+    let count = 0;
+    const len = Math.min(original.length, modified.length);
+    
+    for (let i = 0; i < len; i++) {
+      const xor = original[i] ^ modified[i];
+      for (let bit = 0; bit < 8; bit++) {
+        if ((xor >> bit) & 1) count++;
+      }
+    }
+    
+    return count;
+  }
+  
+  // Add a method to get statistics
+  getStats() {
+    return { ...this.stats };
+  }
+}
+
+// Generate some cover media
+function generateCoverMedia(count = 5, size = 10240) {
+  const media = [];
+  for (let i = 0; i < count; i++) {
+    const buffer = Buffer.alloc(size);
+    for (let j = 0; j < buffer.length; j++) {
+      buffer[j] = Math.floor(Math.random() * 256);
+    }
+    media.push(buffer);
+  }
+  return media;
+}
+
+// Create a custom pattern-based algorithm
+const customAlgorithm = `
+function encode(data, cover) {
+  // Ensure cover is large enough
+  if (cover.length < data.length * 10) {
+    throw new Error('Cover media too small for data payload');
+  }
+  
+  // Create a copy of the cover
+  const result = Buffer.from(cover);
+  
+  // Store data length in first 4 bytes
+  for (let i = 0; i < 4; i++) {
+    result[i] = (data.length >> (i * 8)) & 0xFF;
+  }
+  
+  // Embed data using pattern-based approach
+  const patternSize = 4; // 4 bytes per bit
+  const patternCount = Math.min(data.length * 8, Math.floor((cover.length - 32) / patternSize));
+  
+  for (let i = 0; i < patternCount; i++) {
+    const byteIndex = Math.floor(i / 8);
+    const bitIndex = i % 8;
+    const bit = (data[byteIndex] >> bitIndex) & 1;
+    
+    // Position in cover
+    const coverPos = 32 + (i * patternSize);
+    
+    // Apply pattern change for bit
+    if (bit === 1) {
+      // For '1' bit, make gradient ascending
+      for (let j = 0; j < patternSize - 1; j++) {
+        if (result[coverPos + j] >= result[coverPos + j + 1]) {
+          result[coverPos + j + 1] = result[coverPos + j] + 1;
+        }
+      }
+    } else {
+      // For '0' bit, make gradient descending
+      for (let j = 0; j < patternSize - 1; j++) {
+        if (result[coverPos + j] <= result[coverPos + j + 1]) {
+          result[coverPos + j + 1] = Math.max(0, result[coverPos + j] - 1);
+        }
+      }
+    }
+  }
+  
+  return result;
+}
+
+function decode(stegData) {
+  // Extract data length from first 4 bytes
+  let dataLength = 0;
+  for (let i = 0; i < 4; i++) {
+    dataLength |= stegData[i] << (i * 8);
+  }
+  
+  // Validate data length
+  if (dataLength <= 0 || dataLength > (stegData.length - 32) / 32) {
+    throw new Error('Invalid data length in steganographic content');
+  }
+  
+  // Create result buffer
+  const result = Buffer.alloc(dataLength);
+  
+  // Extract data using pattern detection
+  const patternSize = 4;
+  const patternCount = Math.min(dataLength * 8, Math.floor((stegData.length - 32) / patternSize));
+  
+  for (let i = 0; i < patternCount; i++) {
+    const byteIndex = Math.floor(i / 8);
+    const bitIndex = i % 8;
+    
+    // Position in stego data
+    const stegPos = 32 + (i * patternSize);
+    
+    // Detect pattern
+    let ascending = true;
+    for (let j = 0; j < patternSize - 1; j++) {
+      if (stegData[stegPos + j] >= stegData[stegPos + j + 1]) {
+        ascending = false;
+        break;
+      }
+    }
+    
+    // If pattern is ascending, the bit is 1
+    if (ascending) {
+      result[byteIndex] |= (1 << bitIndex);
+    }
+  }
+  
+  return result;
+}`;
+
+// Create a simple logging inner transport
+const loggingTransport = {
+  send: (data, callback) => {
+    console.log(`Sending ${data.length} bytes of data`);
+    if (callback) callback();
+  },
+  close: () => {
+    console.log('Transport closed');
+  }
+};
+
+// Create an enhanced steganography transport
+const coverMedia = generateCoverMedia();
+const stegTransport = new EnhancedStegTransport(loggingTransport, {
+  enabled: true,
+  encodeMode: 'fixed',
+  algorithm: customAlgorithm,
+  coverMedia,
+  seed: 'custom-steg-example'
+});
+
+// Create an RTP transport using our custom steg transport
+const rtpTransport = createT140RtpTransport('192.168.1.100', 5004, {
+  customTransport: stegTransport,
+  payloadType: 96,
+  ssrc: 12345
+});
+
+// Use the transport with an AI stream (example)
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const stream = await openai.chat.completions.create({
+  model: "gpt-4",
+  messages: [{ role: "user", content: "Tell me about steganography." }],
+  stream: true,
+});
+
+// Process the AI stream
+await processAIStream(stream, null, {
+  transport: rtpTransport
+});
+
+// Log stats at the end
+console.log('Steganography stats:', stegTransport.getStats());</code></pre>
+                    
                     <h3>Separate Transports for Reasoning</h3>
                     <p>You can use separate transport channels for text and reasoning data:</p>
                     
@@ -861,6 +1234,7 @@ const textSocket = processAIStreamToDirectSocket(
                         <a class="nav-link ps-3" href="#api">Core Functions</a>
                         <a class="nav-link ps-3" href="#api">Pre-Connection Functions</a>
                         <a class="nav-link ps-3" href="#api">Interfaces</a>
+                        <a class="nav-link ps-3" href="#api">Steganography</a>
                         <a class="nav-link" href="#examples">Examples</a>
                         <a class="nav-link" href="#advanced">Advanced Usage</a>
                     </nav>

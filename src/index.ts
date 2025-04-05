@@ -26,19 +26,19 @@ import {
 } from './processors/process-ai-stream-to-srtp';
 import { createRtpPacket } from './rtp/create-rtp-packet';
 import { T140RtpTransport } from './rtp/t140-rtp-transport';
+import { RtpConfigWithSteg } from './steganography/rtp-config-extensions';
+import { StegConfig } from './steganography/steg-config.interface';
+import { StegTransport } from './steganography/steg-transport';
+import {
+  createStegT140RtpTransport,
+  processAIStreamToStegRtp
+} from './steganography/transport-factory';
 import { createWebSocketServer } from './transport/websocket-server';
 import { WebSocketServerOptions } from './transport/websocket-server';
 import { processT140BackspaceChars } from './utils/backspace-processing';
 import { BACKSPACE, SEQPACKET_SOCKET_PATH, WS_SERVER_PORT } from './utils/constants';
 import { extractTextFromChunk } from './utils/extract-text';
 import { createSrtpKeysFromPassphrase, generateSecureSSRC } from './utils/security';
-import { 
-  createStegT140RtpTransport,
-  processAIStreamToStegRtp
-} from './steganography/transport-factory';
-import { StegTransport } from './steganography/steg-transport';
-import { StegConfig } from './steganography/steg-config.interface';
-import { RtpConfigWithSteg } from './steganography/rtp-config-extensions';
 
 // Create WebSocket server (non-secure by default)
 const wss = createWebSocketServer();
@@ -55,7 +55,7 @@ export {
   processAIStreamToRtp,
   processAIStreamToSrtp,
   processAIStreamToDirectSocket,
-  
+
   // Steganography functions
   createStegT140RtpTransport,
   processAIStreamToStegRtp,

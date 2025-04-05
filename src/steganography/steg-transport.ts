@@ -27,7 +27,7 @@ export class StegTransport implements IStegTransport {
       algorithm: config.algorithm,
       seed: config.seed || this.generateRandomSeed(),
       encodingRatio: config.encodingRatio || 100,
-      llmProvider: config.llmProvider
+      llmProvider: config.llmProvider,
     };
 
     // Initialize encoding/decoding functions
@@ -56,7 +56,7 @@ export class StegTransport implements IStegTransport {
    */
   public send(data: Buffer, callback?: (error?: Error) => void): void {
     if (!this.config.enabled || this.config.coverMedia.length === 0) {
-      // If steganography is disabled or no cover media available, 
+      // If steganography is disabled or no cover media available,
       // send data directly through inner transport
       this.innerTransport.send(data, callback);
       return;
@@ -66,10 +66,10 @@ export class StegTransport implements IStegTransport {
       // Select random cover media
       const coverIdx = Math.floor(Math.random() * this.config.coverMedia.length);
       const cover = this.config.coverMedia[coverIdx];
-      
+
       // Apply steganography
       const stegData = this.encode(data, cover);
-      
+
       // Send through inner transport
       this.innerTransport.send(stegData, callback);
     } catch (err) {
@@ -120,7 +120,7 @@ export class StegTransport implements IStegTransport {
    */
   public updateConfig(config: Partial<StegConfig>): void {
     this.config = { ...this.config, ...config };
-    
+
     // Reinitialize if necessary
     if (config.algorithm || config.encodeMode) {
       if (this.config.encodeMode === 'llm' && this.config.algorithm) {
@@ -148,14 +148,14 @@ export class StegTransport implements IStegTransport {
       // Note: This uses eval which has security implications
       // In a production environment, consider safer alternatives
       // tslint:disable-next-line:no-eval
-      const algorithmModule = eval(`(function() { 
+      const algorithmModule = eval(`(function() {
         ${algorithm}
         return { encode, decode };
       })()`);
-      
+
       this.encodeFunction = algorithmModule.encode;
       this.decodeFunction = algorithmModule.decode;
-      
+
       // Validate functions
       if (typeof this.encodeFunction !== 'function' || typeof this.decodeFunction !== 'function') {
         throw new Error('Algorithm must export encode and decode functions');
@@ -176,14 +176,14 @@ export class StegTransport implements IStegTransport {
       // Ensure cover is large enough (at least 8x the data size plus header)
       const headerSize = 4; // 4 bytes to store data length
       const requiredCoverSize = (data.length + headerSize) * 8;
-      
+
       if (cover.length < requiredCoverSize) {
         throw new Error(`Cover media too small: needs ${requiredCoverSize} bytes, got ${cover.length}`);
       }
-      
+
       // Create a copy of the cover to modify
       const result = Buffer.from(cover);
-      
+
       // Store the data length in the first 4 bytes (32 bits)
       for (let i = 0; i < 32; i++) {
         const coverIndex = i;
@@ -191,21 +191,21 @@ export class StegTransport implements IStegTransport {
         // Clear the LSB and set it to our data bit
         result[coverIndex] = (result[coverIndex] & 0xFE) | bit;
       }
-      
+
       // Embed the data bits
       for (let i = 0; i < data.length * 8; i++) {
         const coverIndex = i + 32; // Start after the header
         const byteIndex = Math.floor(i / 8);
         const bitIndex = i % 8;
         const bit = (data[byteIndex] >> bitIndex) & 1;
-        
+
         // Clear the LSB and set it to our data bit
         result[coverIndex] = (result[coverIndex] & 0xFE) | bit;
       }
-      
+
       return result;
     };
-    
+
     this.decodeFunction = (stegData: Buffer): Buffer => {
       // Extract the data length from the first 4 bytes (32 bits)
       let dataLength = 0;
@@ -214,12 +214,12 @@ export class StegTransport implements IStegTransport {
         const bit = stegData[coverIndex] & 1;
         dataLength |= (bit << (i % 8));
       }
-      
+
       // Validate data length
       if (dataLength <= 0 || dataLength > (stegData.length - 32) / 8) {
         throw new Error('Invalid data length in steganographic content');
       }
-      
+
       // Extract the data
       const result = Buffer.alloc(dataLength);
       for (let i = 0; i < dataLength * 8; i++) {
@@ -227,13 +227,13 @@ export class StegTransport implements IStegTransport {
         const byteIndex = Math.floor(i / 8);
         const bitIndex = i % 8;
         const bit = stegData[coverIndex] & 1;
-        
+
         // Set the bit in the result buffer
         if (bit) {
           result[byteIndex] |= (1 << bitIndex);
         }
       }
-      
+
       return result;
     };
   }
@@ -283,7 +283,7 @@ The output should include two functions:
 1. encode(data: Buffer, cover: Buffer): Buffer
    - Takes the data to hide and the cover media
    - Returns the modified cover with hidden data
-   
+
 2. decode(stegData: Buffer): Buffer
    - Takes the steganographically modified cover
    - Returns the extracted hidden data
@@ -302,14 +302,14 @@ function encode(data, cover) {
   // Ensure cover is large enough (at least 8x the data size plus header)
   const headerSize = 4; // 4 bytes to store data length
   const requiredCoverSize = (data.length + headerSize) * 8;
-  
+
   if (cover.length < requiredCoverSize) {
     throw new Error(\`Cover media too small: needs \${requiredCoverSize} bytes, got \${cover.length}\`);
   }
-  
+
   // Create a copy of the cover to modify
   const result = Buffer.from(cover);
-  
+
   // Store the data length in the first 4 bytes (32 bits)
   for (let i = 0; i < 32; i++) {
     const coverIndex = i;
@@ -317,18 +317,18 @@ function encode(data, cover) {
     // Clear the LSB and set it to our data bit
     result[coverIndex] = (result[coverIndex] & 0xFE) | bit;
   }
-  
+
   // Embed the data bits
   for (let i = 0; i < data.length * 8; i++) {
     const coverIndex = i + 32; // Start after the header
     const byteIndex = Math.floor(i / 8);
     const bitIndex = i % 8;
     const bit = (data[byteIndex] >> bitIndex) & 1;
-    
+
     // Clear the LSB and set it to our data bit
     result[coverIndex] = (result[coverIndex] & 0xFE) | bit;
   }
-  
+
   return result;
 }
 
@@ -341,12 +341,12 @@ function decode(stegData) {
     const bit = stegData[coverIndex] & 1;
     dataLength |= (bit << (i % 8));
   }
-  
+
   // Validate data length
   if (dataLength <= 0 || dataLength > (stegData.length - 32) / 8) {
     throw new Error('Invalid data length in steganographic content');
   }
-  
+
   // Extract the data
   const result = Buffer.alloc(dataLength);
   for (let i = 0; i < dataLength * 8; i++) {
@@ -354,13 +354,13 @@ function decode(stegData) {
     const byteIndex = Math.floor(i / 8);
     const bitIndex = i % 8;
     const bit = stegData[coverIndex] & 1;
-    
+
     // Set the bit in the result buffer
     if (bit) {
       result[byteIndex] |= (1 << bitIndex);
     }
   }
-  
+
   return result;
 }`;
   }
@@ -369,7 +369,7 @@ function decode(stegData) {
    * Generate a random seed for the steganography algorithm
    */
   private generateRandomSeed(): string {
-    return Math.random().toString(36).substring(2, 15) + 
+    return Math.random().toString(36).substring(2, 15) +
            Math.random().toString(36).substring(2, 15);
   }
 }
