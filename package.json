@@ -31,7 +31,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.prod.json",
     "clean": "shx rm -rf dist/ .*cache *.log",
-    "lint": "npm run lint:debug -- --config tslint.prod.json --no-verify",
+    "lint": "npm run lint:debug -- --config tslint.prod.json",
     "lint:debug": "tslint --project tsconfig.json --format stylish 'src/**/*.ts' --config tslint.prod.json --force --fix",
     "lint:src": "tslint --project tsconfig.json --format stylish 'src/**/*.ts' --config tslint.prod.json",
     "prepublishOnly": "npm run lint:src",
