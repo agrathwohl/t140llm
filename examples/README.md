@@ -7,6 +7,16 @@ This directory contains examples demonstrating the T140LLM library for transmitt
 > Check out the NEW [`assistive-llm`](https://github.com/agrathwohl/assistive-llm/)
 > project for an implementation of this library.
 
+## New Steganography Examples
+
+The [steganography/](steganography/) directory contains examples demonstrating the steganography features of T140LLM, which allow hiding RTP packets within cover media:
+
+- LLM-generated steganography algorithms
+- Custom steganography transports
+- Advanced encoding/decoding techniques
+
+See the [steganography/README.md](steganography/README.md) for more details.
+
 ### 1. Basic Demonstration (`demo.js`)
 
 This script demonstrates sending text streams through different transport mechanisms:
