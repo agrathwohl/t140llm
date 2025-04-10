@@ -89,6 +89,11 @@ $ npm install --save t140llm
 
 ### Usage
 
+Ever wanted to send an LLM text stream to a [telegraph machine][tm]? Or send Claude
+to an [assistive reader device][ad]? Or pipe some o1 reasoning directly to a [satelite
+orbiting the planet][sat] with forward error correction to ensure the message
+arrives in full? If so, read on...
+
 #### Basic Usage
 
 ```typescript
@@ -706,4 +711,6 @@ Optional method to close the transport and clean up resources.
 
 [node-version-badge]: https://flat.badgen.net/npm/node/t140llm
 [mit-license-badge]: https://flat.badgen.net/npm/license/t140llm
-
+[tm]: https://github.com/agrathwohl/t140llm/blob/master/examples/baudot_ita2_tty_example.js
+[ad]: https://github.com/agrathwohl/assistive-llm
+[sat]: https://github.com/agrathwohl/t140llm/blob/master/examples/fec_demo.js
