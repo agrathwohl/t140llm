@@ -1,6 +1,6 @@
 {
   "name": "t140llm",
-  "version": "0.0.10",
+  "version": "0.0.11",
   "type": "commonjs",
   "description": "",
   "keywords": [
@@ -58,7 +58,6 @@
     "@types/node": "^13.13.52",
     "babel-jest": "^29.7.0",
     "dotenv": "^16.4.7",
-    "husky": "^4.2.3",
     "jest": "^29.7.0",
     "shx": "^0.3.2",
     "ts-jest": "^28.0.8",

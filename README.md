@@ -25,19 +25,24 @@
     - [With Forward Error Correction](#with-forward-error-correction)
     - [With Custom Transport](#with-custom-transport)
     - [Pre-connecting to Transport](#pre-connecting-to-transport)
+    - [Multiplexing Multiple LLM Streams](#multiplexing-multiple-llm-streams)
 - [How It Works](#how-it-works)
 - [API Reference](#api-reference)
   - [processAIStream(stream, [websocketUrl])](#processaistreamstream-websocketurl)
   - [processAIStreamToRtp(stream, remoteAddress, [remotePort], [rtpConfig])](#processaistreamtortpstream-remoteaddress-remoteport-rtpconfig)
   - [processAIStreamToSrtp(stream, remoteAddress, srtpConfig, [remotePort])](#processaistreamtosrtpstream-remoteaddress-srtpconfig-remoteport)
   - [processAIStreamToDirectSocket(stream, [socketPath], [rtpConfig])](#processaistreamtodirectsocketstream-socketpath-rtpconfig)
+  - [processAIStreamsToMultiplexedRtp(streams, remoteAddress, [remotePort], [rtpConfig])](#processaistreamstomultiplexedrtpstreams-remoteaddress-remoteport-rtpconfig)
   - [createT140WebSocketConnection(websocketUrl, [options])](#createt140websocketconnectionwebsocketurl-options)
   - [createDirectSocketTransport(socketPath, [rtpConfig])](#createdirectsockettransportsocketpath-rtpconfig)
   - [createT140RtpTransport(remoteAddress, [remotePort], [rtpConfig])](#createt140rtptransportremoteaddress-remoteport-rtpconfig)
   - [createT140SrtpTransport(remoteAddress, srtpConfig, [remotePort])](#createt140srtptransportremoteaddress-srtpconfig-remoteport)
+  - [createT140RtpMultiplexer(remoteAddress, [remotePort], [multiplexConfig])](#createt140rtpmultiplexerremoteaddress-remoteport-multiplexconfig)
   - [createRtpPacket(sequenceNumber, timestamp, payload, [options])](#creatertppacketsequencenumber-timestamp-payload-options)
   - [createSrtpKeysFromPassphrase(passphrase)](#createsrtpkeysfrompassphrasepassphrase)
   - [T140RtpTransport](#t140rtptransport)
+  - [T140RtpMultiplexer](#t140rtpmultiplexer)
+  - [T140StreamDemultiplexer](#t140streamdemultiplexer)
   - [TransportStream Interface](#transportstream-interface)
 - [License](#license)
 
@@ -66,6 +71,7 @@ $ npm install --save t140llm
 - [x] UNIX SEQPACKET sockets (for supporting >1 LLM stream simultaneously)
 - [x] UNIX STREAM sockets (for single LLM stream support)
 - [x] WebSocket
+- [x] Stream Multiplexing (combine multiple LLM streams into a single RTP output)
 
 ### Support
 
@@ -439,6 +445,131 @@ This is especially useful in scenarios where:
 
 See the [examples/pre_connect_example.js](examples/pre_connect_example.js) file for complete examples of pre-connecting with different transport types.
 
+#### Multiplexing Multiple LLM Streams
+
+You can combine multiple LLM streams into a single RTP output stream using the multiplexer:
+
+```typescript
+import { processAIStreamsToMultiplexedRtp, createT140RtpMultiplexer, addAIStreamToMultiplexer } from "t140llm";
+import { OpenAI } from "openai";
+import Anthropic from "@anthropic-ai/sdk";
+
+// Initialize clients
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+// Create streaming responses from different models
+const stream1 = await openai.chat.completions.create({
+  model: "gpt-4",
+  messages: [{ role: "user", content: "Write a short story about robots." }],
+  stream: true,
+});
+
+const stream2 = await anthropic.messages.create({
+  model: "claude-3-sonnet-20240229",
+  messages: [{ role: "user", content: "Write a short poem about nature." }],
+  stream: true,
+});
+
+// Method 1: Use the convenience function to multiplex streams
+const streams = new Map();
+streams.set('gpt4', stream1);
+streams.set('claude', stream2);
+
+const multiplexer = processAIStreamsToMultiplexedRtp(
+  streams,
+  "192.168.1.100", // Remote IP address
+  5004, // RTP port
+  {
+    multiplexEnabled: true, // Required for multiplexing
+    useCsrcForStreamId: true, // Use CSRC field for stream identification (recommended)
+    charRateLimit: 60, // Higher rate limit for multiple streams
+  }
+);
+
+// Method 2: Create multiplexer first, then add streams dynamically
+const multiplexer = createT140RtpMultiplexer(
+  "192.168.1.100", // Remote IP address
+  5004, // RTP port
+  {
+    multiplexEnabled: true,
+    useCsrcForStreamId: true,
+  }
+);
+
+// Add streams with unique identifiers
+multiplexer.addStream('gpt4', stream1);
+multiplexer.addStream('claude', stream2);
+
+// Add another stream later when it becomes available
+const stream3 = await openai.chat.completions.create({
+  model: "gpt-3.5-turbo",
+  messages: [{ role: "user", content: "Write a joke." }],
+  stream: true,
+});
+
+addAIStreamToMultiplexer(multiplexer, 'gpt35', stream3);
+
+// Listen for multiplexer events
+multiplexer.on('streamAdded', (id) => {
+  console.log(`Stream added: ${id}`);
+});
+
+multiplexer.on('streamRemoved', (id) => {
+  console.log(`Stream removed: ${id}`);
+});
+
+multiplexer.on('streamError', ({ streamId, error }) => {
+  console.error(`Error in stream ${streamId}:`, error);
+});
+
+// Close multiplexer when done
+// multiplexer.close();
+```
+
+On the receiving end, you can use the `T140StreamDemultiplexer` to extract the original streams:
+
+```typescript
+import { T140StreamDemultiplexer } from "t140llm";
+import * as dgram from "dgram";
+
+// Create a UDP socket to receive RTP packets
+const socket = dgram.createSocket('udp4');
+
+// Create demultiplexer
+const demultiplexer = new T140StreamDemultiplexer();
+
+// Process incoming RTP packets
+socket.on('message', (msg) => {
+  // Process the packet through the demultiplexer
+  demultiplexer.processPacket(msg, true); // Use true for CSRC-based identification
+});
+
+// Listen for new streams
+demultiplexer.on('stream', (streamId, stream) => {
+  console.log(`New stream detected: ${streamId}`);
+  
+  // Handle this stream's data
+  stream.on('data', (text) => {
+    console.log(`[${streamId}] ${text}`);
+  });
+  
+  stream.on('metadata', (metadata) => {
+    console.log(`[${streamId}] Metadata:`, metadata);
+  });
+});
+
+// Bind socket to listen for packets
+socket.bind(5004);
+```
+
+The multiplexing feature provides two methods for identifying streams:
+
+1. **CSRC field identification** (recommended): Uses the RTP CSRC field to carry stream identifiers
+2. **Prefix-based identification**: Prepends each payload with a stream identifier
+
+See the [examples/multiplexed_streams_example.js](examples/multiplexed_streams_example.js) file for a complete example of multiplexing multiple LLM streams.
+
 #### With Reasoning Stream Processing
 
 Some LLM providers can stream their reasoning process as separate metadata alongside the generated text. This allows applications to show both the LLM's thought process and its final output:
@@ -588,6 +719,19 @@ Creates an RTP transport that can be used for T.140 transmission. This allows es
 
 Creates an SRTP transport that can be used for secure T.140 transmission. This allows establishing the connection before the LLM stream is available.
 
+### createT140RtpMultiplexer(remoteAddress, [remotePort], [multiplexConfig])
+
+- `remoteAddress` <[string][string-mdn-url]> The remote IP address to send multiplexed packets to.
+- `remotePort` <[number][number-mdn-url]> Optional. The remote port to send multiplexed packets to. Defaults to `5004`.
+- `multiplexConfig` <RtpConfig> Optional. Configuration options for the multiplexer:
+  - `multiplexEnabled` <[boolean][boolean-mdn-url]> Required. Set to `true` to enable multiplexing.
+  - `useCsrcForStreamId` <[boolean][boolean-mdn-url]> Optional. Use CSRC field for stream identification. Defaults to `false`.
+  - `charRateLimit` <[number][number-mdn-url]> Optional. Character rate limit for all streams combined. Defaults to `30`.
+  - All other RTP configuration options are also supported.
+- returns: <T140RtpMultiplexer> The multiplexer instance.
+
+Creates a multiplexer that can combine multiple LLM streams into a single RTP output.
+
 ### processAIStreamToRtp(stream, remoteAddress, [remotePort], [rtpConfig])
 
 - `stream` <TextDataStream> The streaming data source that emits text chunks.
@@ -620,6 +764,19 @@ Processes an AI stream and sends the text chunks directly as T.140 data over RTP
 - returns: <T140RtpTransport> The transport object that can be used to close the connection.
 
 Processes an AI stream and sends the text chunks directly as T.140 data over secure SRTP. If a custom transport is provided, it will be used instead of creating a UDP socket.
+
+### processAIStreamsToMultiplexedRtp(streams, remoteAddress, [remotePort], [rtpConfig])
+
+- `streams` <Map<string, TextDataStream>> A map of stream IDs to TextDataStream instances.
+- `remoteAddress` <[string][string-mdn-url]> The remote IP address to send RTP packets to.
+- `remotePort` <[number][number-mdn-url]> Optional. The remote port to send RTP packets to. Defaults to `5004`.
+- `rtpConfig` <RtpConfig> Optional. Configuration options for RTP, including multiplexing options:
+  - `multiplexEnabled` <[boolean][boolean-mdn-url]> Required. Set to `true` to enable multiplexing.
+  - `useCsrcForStreamId` <[boolean][boolean-mdn-url]> Optional. Use CSRC field for stream identification. Defaults to `false`.
+  - All other RTP configuration options are also supported.
+- returns: <T140RtpMultiplexer> The multiplexer instance.
+
+Processes multiple AI streams and combines them into a single multiplexed RTP output.
 
 ### createRtpPacket(sequenceNumber, timestamp, payload, [options])
 
@@ -668,6 +825,94 @@ Sends text data as T.140 over RTP or SRTP. If FEC is enabled, it will also gener
 - returns: <void>
 
 Closes the UDP socket or custom transport and cleans up resources. If FEC is enabled, it will send any remaining FEC packets before closing.
+
+### T140RtpMultiplexer
+
+A class that manages multiple LLM streams and multiplexes them into a single RTP output.
+
+#### constructor(remoteAddress, [remotePort], [config])
+
+- `remoteAddress` <[string][string-mdn-url]> The remote IP address to send packets to.
+- `remotePort` <[number][number-mdn-url]> Optional. The remote port to send packets to. Defaults to `5004`.
+- `config` <RtpConfig> Optional. Configuration options for the multiplexer.
+
+#### addStream(id, stream, [streamConfig], [processorOptions])
+
+- `id` <[string][string-mdn-url]> Unique identifier for this stream.
+- `stream` <TextDataStream> The stream to add to the multiplexer.
+- `streamConfig` <RtpConfig> Optional. Configuration options specific to this stream.
+- `processorOptions` <ProcessorOptions> Optional. Options for processing this stream.
+- returns: <[boolean][boolean-mdn-url]> `true` if the stream was added successfully, `false` otherwise.
+
+Adds a new stream to the multiplexer.
+
+#### removeStream(id)
+
+- `id` <[string][string-mdn-url]> ID of the stream to remove.
+- returns: <[boolean][boolean-mdn-url]> `true` if the stream was found and removed, `false` otherwise.
+
+Removes a stream from the multiplexer.
+
+#### getStreamCount()
+
+- returns: <[number][number-mdn-url]> The number of active streams.
+
+Returns the number of active streams in the multiplexer.
+
+#### getStreamIds()
+
+- returns: <Array<[string][string-mdn-url]>> Array of active stream IDs.
+
+Returns an array of all active stream IDs.
+
+#### close()
+
+- returns: <void>
+
+Closes the multiplexer and all streams.
+
+#### Events
+
+- `streamAdded` - Emitted when a new stream is added to the multiplexer.
+- `streamRemoved` - Emitted when a stream is removed from the multiplexer.
+- `streamError` - Emitted when an error occurs with a specific stream.
+- `metadata` - Emitted when metadata is received from any stream.
+- `error` - Emitted when an error occurs with the multiplexer itself.
+
+### T140StreamDemultiplexer
+
+A class that extracts individual streams from multiplexed RTP packets.
+
+#### constructor()
+
+Creates a new demultiplexer instance.
+
+#### processPacket(data, useCSRC)
+
+- `data` <Buffer> Buffer containing RTP packet data.
+- `useCSRC` <[boolean][boolean-mdn-url]> Optional. Whether to use CSRC fields for stream identification. Defaults to `false`.
+- returns: <void>
+
+Processes an RTP packet and extracts stream information.
+
+#### getStream(streamId)
+
+- `streamId` <[string][string-mdn-url]> The stream ID to retrieve.
+- returns: <DemultiplexedStream|undefined> The demultiplexed stream if found, `undefined` otherwise.
+
+Gets a demultiplexed stream by ID.
+
+#### getStreamIds()
+
+- returns: <Array<[string][string-mdn-url]>> Array of detected stream IDs.
+
+Returns an array of all detected stream IDs.
+
+#### Events
+
+- `stream` - Emitted when a new stream is detected.
+- `data` - Emitted for all demultiplexed data with streamId, text, and metadata.
+- `error` - Emitted when an error occurs during packet processing.
 
 ### TransportStream Interface
 
