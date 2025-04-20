@@ -82,7 +82,7 @@ describe('Multiplexing E2E', () => {
     });
     
     // Get access to the mock transport
-    mockTransport = (multiplexer as any)._getTransport() as MockTransport;
+    mockTransport = multiplexer.getTransport() as MockTransport;
     
     // Create demultiplexer
     demultiplexer = new T140StreamDemultiplexer();

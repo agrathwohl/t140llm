@@ -165,7 +165,7 @@ describe('T140RtpMultiplexer', () => {
       const stream = new MockStream('test');
       
       // Get the underlying transport
-      const transport = (multiplexer as any)._getTransport() as MockTransport;
+      const transport = multiplexer.getTransport() as MockTransport;
       
       // Add the stream
       multiplexer.addStream('test', stream);
@@ -258,7 +258,7 @@ describe('T140RtpMultiplexer', () => {
   describe('close', () => {
     it('should close the multiplexer and clear all streams', () => {
       const multiplexer = new T140RtpMultiplexer('127.0.0.1', 5004);
-      const transport = (multiplexer as any)._getTransport() as MockTransport;
+      const transport = multiplexer.getTransport() as MockTransport;
       
       // Add multiple streams
       const stream1 = new MockStream('test1');

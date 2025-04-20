@@ -14,7 +14,7 @@ export function createRtpPacket(
   const version = 2;
   const padding = 0;
   const extension = 0;
-  
+
   // Set CSRC count if CSRC list is provided
   const csrcList = options.csrcList || [];
   const csrcCount = csrcList.length;
@@ -35,7 +35,7 @@ export function createRtpPacket(
   // Calculate the header size with CSRC list
   const headerSize = RTP_HEADER_SIZE + (csrcCount * 4);
   const rtpHeader = Buffer.alloc(headerSize);
-  
+
   // Use a different approach to avoid bitwise operations
   rtpHeader.writeUInt8(
     version * 64 + padding * 32 + extension * 16 + csrcCount,
@@ -45,9 +45,9 @@ export function createRtpPacket(
   rtpHeader.writeUInt16BE(sequenceNumber, 2);
   rtpHeader.writeUInt32BE(timestamp, 4);
   rtpHeader.writeUInt32BE(ssrc, 8);
-  
+
   // Add CSRC identifiers if provided
-  for (let i = 0; i < csrcCount; i++) {
+  for (let i = 0; i < csrcCount; i += 1) {
     rtpHeader.writeUInt32BE(csrcList[i], 12 + (i * 4));
   }
 

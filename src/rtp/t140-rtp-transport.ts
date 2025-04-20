@@ -418,14 +418,14 @@ export class T140RtpTransport extends EventEmitter {
 
   /**
    * Send text data as T.140 over RTP or SRTP
-   * 
+   *
    * @param text Text to send
    * @param options Optional overrides for this packet only
    */
   sendText(text: string, options?: Partial<RtpConfig>): void {
     // Apply options as overrides to the config for this packet
     const packetOptions = options ? { ...this.config, ...options } : this.config;
-    
+
     // Check if we should use RED (redundancy) encoding
     let packet: Buffer;
     if (packetOptions.redEnabled && this.redPackets.length > 0) {

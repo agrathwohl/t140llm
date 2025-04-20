@@ -44,16 +44,16 @@ import { createSrtpKeysFromPassphrase, generateSecureSSRC } from './utils/securi
 const wss = createWebSocketServer();
 
 // Import new multiplexer components for direct export
-import { T140RtpMultiplexer } from './rtp/t140-rtp-multiplexer';
 import {
-  createT140RtpMultiplexer,
   addAIStreamToMultiplexer,
+  createT140RtpMultiplexer,
   processAIStreamsToMultiplexedRtp
 } from './processors/process-ai-stream-to-multiplex';
-import { 
-  T140StreamDemultiplexer,
+import { T140RtpMultiplexer } from './rtp/t140-rtp-multiplexer';
+import {
   DemultiplexedStream,
-  DemultiplexedStreamImpl
+  DemultiplexedStreamImpl,
+  T140StreamDemultiplexer
 } from './utils/demultiplex-streams';
 
 export {
