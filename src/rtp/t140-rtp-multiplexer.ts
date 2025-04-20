@@ -40,6 +40,11 @@ export class T140RtpMultiplexer extends EventEmitter {
   private tokenBucket: number;
   private nextCsrcId: number = 1;
   
+  // Expose for testing purposes
+  public _getTransport(): T140RtpTransport {
+    return this.transport;
+  }
+  
   /**
    * Create a new multiplexer for T140 RTP streams
    * 
