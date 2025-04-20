@@ -25,4 +25,10 @@ export interface RtpConfig {
   metadataCallback?: (metadata: LLMMetadata) => void; // Callback for processing metadata
   sendMetadataAsPackets?: boolean; // Send metadata as separate RTP packets
   metadataPayloadType?: number; // Optional different payload type for metadata
+  
+  // Multiplexing options
+  multiplexEnabled?: boolean; // Enable multiplexing multiple streams
+  streamIdentifier?: string; // Unique identifier for this stream in a multiplex
+  csrcList?: number[]; // Contributing source identifiers
+  useCsrcForStreamId?: boolean; // Use CSRC field for stream identification
 }

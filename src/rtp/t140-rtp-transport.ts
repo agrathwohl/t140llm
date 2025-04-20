@@ -418,25 +418,35 @@ export class T140RtpTransport extends EventEmitter {
 
   /**
    * Send text data as T.140 over RTP or SRTP
+   * 
+   * @param text Text to send
+   * @param options Optional overrides for this packet only
    */
-  sendText(text: string): void {
+  sendText(text: string, options?: Partial<RtpConfig>): void {
+    // Apply options as overrides to the config for this packet
+    const packetOptions = options ? { ...this.config, ...options } : this.config;
+    
     // Check if we should use RED (redundancy) encoding
     let packet: Buffer;
-    if (this.config.redEnabled && this.redPackets.length > 0) {
+    if (packetOptions.redEnabled && this.redPackets.length > 0) {
       // Create a RED packet with redundancy
       const redPacket = this._createRedPacket(text, this.redPackets);
 
       // Store the packet for future redundancy use
       const normalPacket = createRtpPacket(this.seqNum, this.timestamp, text, {
-        payloadType: this.config.payloadType,
-        ssrc: this.config.ssrc,
+        payloadType: packetOptions.payloadType,
+        ssrc: packetOptions.ssrc,
+        multiplexEnabled: packetOptions.multiplexEnabled,
+        streamIdentifier: packetOptions.streamIdentifier,
+        csrcList: packetOptions.csrcList,
+        useCsrcForStreamId: packetOptions.useCsrcForStreamId,
       });
 
       // Keep original non-RED packet for redundancy
       this.redPackets.push(Buffer.from(normalPacket));
 
       // Limit the number of stored packets
-      if (this.redPackets.length > this.config.redundancyLevel!) {
+      if (this.redPackets.length > packetOptions.redundancyLevel!) {
         this.redPackets.shift(); // Remove oldest packet
       }
 
@@ -444,16 +454,20 @@ export class T140RtpTransport extends EventEmitter {
     } else {
       // Create normal RTP packet
       const rtpPacket = createRtpPacket(this.seqNum, this.timestamp, text, {
-        payloadType: this.config.payloadType,
-        ssrc: this.config.ssrc,
+        payloadType: packetOptions.payloadType,
+        ssrc: packetOptions.ssrc,
+        multiplexEnabled: packetOptions.multiplexEnabled,
+        streamIdentifier: packetOptions.streamIdentifier,
+        csrcList: packetOptions.csrcList,
+        useCsrcForStreamId: packetOptions.useCsrcForStreamId,
       });
 
       // Store for future redundancy use if RED is enabled
-      if (this.config.redEnabled) {
+      if (packetOptions.redEnabled) {
         this.redPackets.push(Buffer.from(rtpPacket));
 
         // Limit the number of stored packets
-        if (this.redPackets.length > this.config.redundancyLevel!) {
+        if (this.redPackets.length > packetOptions.redundancyLevel!) {
           this.redPackets.shift(); // Remove oldest packet
         }
       }

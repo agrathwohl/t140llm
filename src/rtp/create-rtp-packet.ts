@@ -14,7 +14,10 @@ export function createRtpPacket(
   const version = 2;
   const padding = 0;
   const extension = 0;
-  const csrcCount = 0;
+  
+  // Set CSRC count if CSRC list is provided
+  const csrcList = options.csrcList || [];
+  const csrcCount = csrcList.length;
 
   // Set marker bit to 1 for metadata packets to distinguish them
   // This allows receivers to identify metadata packets vs regular text
@@ -29,7 +32,10 @@ export function createRtpPacket(
   // Generate secure SSRC if not provided
   const ssrc = options.ssrc || generateSecureSSRC();
 
-  const rtpHeader = Buffer.alloc(RTP_HEADER_SIZE);
+  // Calculate the header size with CSRC list
+  const headerSize = RTP_HEADER_SIZE + (csrcCount * 4);
+  const rtpHeader = Buffer.alloc(headerSize);
+  
   // Use a different approach to avoid bitwise operations
   rtpHeader.writeUInt8(
     version * 64 + padding * 32 + extension * 16 + csrcCount,
@@ -39,13 +45,20 @@ export function createRtpPacket(
   rtpHeader.writeUInt16BE(sequenceNumber, 2);
   rtpHeader.writeUInt32BE(timestamp, 4);
   rtpHeader.writeUInt32BE(ssrc, 8);
+  
+  // Add CSRC identifiers if provided
+  for (let i = 0; i < csrcCount; i++) {
+    rtpHeader.writeUInt32BE(csrcList[i], 12 + (i * 4));
+  }
 
-  // For metadata packets, add a small prefix to identify them on the receiving end
-  // even if marker bits are ignored by intermediaries
+  // Create payload buffer with optional identifiers
   let payloadBuffer;
   if (options.metadataPacket) {
     // Add metadata prefix "MD:" to identify these packets
     payloadBuffer = Buffer.from(`MD:${payload}`, 'utf-8');
+  } else if (options.multiplexEnabled && options.streamIdentifier && !options.useCsrcForStreamId) {
+    // Add stream identifier as a prefix for multiplexed streams when not using CSRC
+    payloadBuffer = Buffer.from(`${options.streamIdentifier}:${payload}`, 'utf-8');
   } else {
     payloadBuffer = Buffer.from(payload, 'utf-8');
   }
