@@ -570,6 +570,34 @@ The multiplexing feature provides two methods for identifying streams:
 
 See the [examples/multiplexed_streams_example.js](examples/multiplexed_streams_example.js) file for a complete example of multiplexing multiple LLM streams.
 
+##### Why Multiplex?
+
+There are numerous benefits to implementing T140LLM's multiplexed streams, among a few are:
+
+**Network efficiency benefits:**
+  - Transmit multiple AI model outputs over a single connection
+  - Implement fair bandwidth allocation across streams
+  - Dynamic stream handling - add or remove AI streams at runtime
+  - Identification preservation - maintain separation between different model outputs
+  - Simplified integration - manage multiple AI services through a unified protocol
+
+**Fastest-first benefits:**
+  - Implement first-response selection - use whichever model responds first
+  - Reduce perceived latency - display the fastest response immediately
+  - Enable progressive enhancement - show initial results quickly while better/slower models complete
+
+**Security benefits:**
+  - Double encryption through nested SRTP - outer layer for transport, inner layer for individual streams
+  - Defense-in-depth protection requiring compromise of multiple encryption keys
+  - Compartmentalization of security domains for different AI providers
+  - Protection against side-channel attacks through multiple encryption layers
+
+**Content Personalization benefits:**
+  - Client-side stream selection based on user preferences/needs
+  - Adaptive content delivery (education level, technical depth, etc.)
+  - Multi-language support from a single source
+  - Real-time translation alongside original content
+
 #### With Reasoning Stream Processing
 
 Some LLM providers can stream their reasoning process as separate metadata alongside the generated text. This allows applications to show both the LLM's thought process and its final output:
