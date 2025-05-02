@@ -112,6 +112,12 @@ async function main() {
         console.log('Streaming from Cohere...');
         stream = await streamFromCohere();
         break;
+      case 'gemini':
+        console.log('Streaming from Google Gemini...');
+        // Import Gemini stream function from separate example
+        const { streamFromGemini } = require('./gemini_example');
+        stream = await streamFromGemini();
+        break;
       default:
         throw new Error(`Unknown provider: ${provider}`);
     }

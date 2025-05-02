@@ -81,7 +81,7 @@ $ npm install --save t140llm
 - [x] Cohere
 - [x] Mistral
 - [ ] Amazon (Bedrock)
-- [ ] Google (Gemini/PaLM)
+- [x] Google (Gemini)
 - [x] Ollama
 - [x] Reasoning Support
 - [ ] Binary Data
@@ -213,6 +213,46 @@ const stream = await cohere.chatStream({
   model: "command",
   message: "Write a short story.",
 });
+
+// Process the stream and convert to T.140
+processAIStream(stream);
+```
+
+#### With Google Gemini
+
+```typescript
+import { processAIStream } from "t140llm";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+
+// Initialize Gemini client
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
+const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+
+// Create a chat session
+const chat = model.startChat();
+
+// Get a streaming response
+const result = await chat.sendMessageStream("Write a short story.");
+
+// Create an event emitter to handle streaming
+const { EventEmitter } = require('events');
+const stream = new EventEmitter();
+
+// Process the stream
+const processChunks = async () => {
+  try {
+    for await (const chunk of result.stream) {
+      // Emit each chunk
+      stream.emit('data', chunk);
+    }
+    // Signal the end of the stream
+    stream.emit('end');
+  } catch (error) {
+    stream.emit('error', error);
+  }
+};
+
+processChunks();
 
 // Process the stream and convert to T.140
 processAIStream(stream);

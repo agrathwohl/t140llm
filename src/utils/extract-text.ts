@@ -54,6 +54,16 @@ export function extractTextFromChunk(chunk: any): ExtractedContent {
     };
   }
 
+  // Extract metadata from Google Gemini tool calls
+  if (chunk?.candidates?.[0]?.content?.parts?.[0]?.functionCall) {
+    const toolCall = chunk.candidates[0].content.parts[0].functionCall;
+    result.metadata = {
+      type: 'tool_call',
+      id: toolCall.name || undefined,
+      content: toolCall,
+    };
+  }
+
   // Extract metadata from Anthropic tool results (tool_results)
   if (chunk?.type === 'tool_result' || chunk?.delta?.type === 'tool_result') {
     result.metadata = {
@@ -121,6 +131,12 @@ export function extractTextFromChunk(chunk: any): ExtractedContent {
   // Handle Ollama format
   if (chunk?.response !== undefined) {
     result.text = chunk.response;
+    return result;
+  }
+
+  // Handle Google Gemini format
+  if (chunk?.candidates?.[0]?.content?.parts?.[0]?.text !== undefined) {
+    result.text = chunk.candidates[0].content.parts[0].text;
     return result;
   }
 
