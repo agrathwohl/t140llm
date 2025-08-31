@@ -423,17 +423,13 @@ export class T140RtpTransport extends EventEmitter {
    * @param options Optional overrides for this packet only
    */
   sendText(text: string, options?: Partial<RtpConfig>): void {
-    // Apply options as overrides to the config for this packet
     const packetOptions = options ? { ...this.config, ...options } : this.config;
 
-    // Check if we should use RED (redundancy) encoding
     let packet: Buffer;
+    let nonRedPacket: Buffer;
+
     if (packetOptions.redEnabled && this.redPackets.length > 0) {
-      // Create a RED packet with redundancy
-      const redPacket = this._createRedPacket(text, this.redPackets);
-
-      // Store the packet for future redundancy use
-      const normalPacket = createRtpPacket(this.seqNum, this.timestamp, text, {
+      nonRedPacket = createRtpPacket(this.seqNum, this.timestamp, text, {
         payloadType: packetOptions.payloadType,
         ssrc: packetOptions.ssrc,
         multiplexEnabled: packetOptions.multiplexEnabled,
@@ -441,19 +437,10 @@ export class T140RtpTransport extends EventEmitter {
         csrcList: packetOptions.csrcList,
         useCsrcForStreamId: packetOptions.useCsrcForStreamId,
       });
-
-      // Keep original non-RED packet for redundancy
-      this.redPackets.push(Buffer.from(normalPacket));
-
-      // Limit the number of stored packets
-      if (this.redPackets.length > packetOptions.redundancyLevel!) {
-        this.redPackets.shift(); // Remove oldest packet
-      }
-
-      packet = redPacket;
+      this._rememberRedPacket(nonRedPacket, packetOptions.redundancyLevel || 2);
+      packet = this._createRedPacket(text, this.redPackets);
     } else {
-      // Create normal RTP packet
-      const rtpPacket = createRtpPacket(this.seqNum, this.timestamp, text, {
+      nonRedPacket = createRtpPacket(this.seqNum, this.timestamp, text, {
         payloadType: packetOptions.payloadType,
         ssrc: packetOptions.ssrc,
         multiplexEnabled: packetOptions.multiplexEnabled,
@@ -461,115 +448,39 @@ export class T140RtpTransport extends EventEmitter {
         csrcList: packetOptions.csrcList,
         useCsrcForStreamId: packetOptions.useCsrcForStreamId,
       });
-
-      // Store for future redundancy use if RED is enabled
       if (packetOptions.redEnabled) {
-        this.redPackets.push(Buffer.from(rtpPacket));
-
-        // Limit the number of stored packets
-        if (this.redPackets.length > packetOptions.redundancyLevel!) {
-          this.redPackets.shift(); // Remove oldest packet
-        }
+        this._rememberRedPacket(nonRedPacket, packetOptions.redundancyLevel || 2);
       }
-
-      packet = rtpPacket;
+      packet = nonRedPacket;
     }
 
-    // Encrypt the packet if using SRTP
-    let finalPacket: Buffer;
-    try {
-      if (this.srtpSession) {
-        // Use the typed protect method
-        finalPacket = this.srtpSession.protect(packet);
-      } else {
-        finalPacket = packet;
-      }
-    } catch (err) {
-      this.emit('error', {
-        type: T140RtpErrorType.ENCRYPTION_ERROR,
-        message: 'Failed to encrypt packet with SRTP - packet not sent',
-        cause: err as Error,
-      });
-      // Don't fall back to unencrypted - abort the send operation for security
-      return;
-    }
+    const finalPacket = this._encrypt(packet, 'rtp');
+    if (!finalPacket) return;
+    this._sendWithLabel(finalPacket, 'RTP packet');
 
-    // Send the packet using either the custom transport or UDP socket
-    this._sendPacket(finalPacket, (err) => {
-      if (err) {
-        this.emit('error', {
-          type: T140RtpErrorType.NETWORK_ERROR,
-          message: 'Failed to send RTP packet',
-          cause: err,
-        });
-      }
-    });
-
-    // If FEC is enabled, add this packet to the buffer for FEC calculation
     if (this.config.fecEnabled) {
-      // Store original packet for FEC (non-RED packet for simplicity)
-      const rtpPacket = createRtpPacket(this.seqNum, this.timestamp, text, {
-        payloadType: this.config.payloadType,
-        ssrc: this.config.ssrc,
-      });
-
-      this.packetBuffer.push(Buffer.from(rtpPacket)); // Make a copy of the packet
+      this.packetBuffer.push(Buffer.from(nonRedPacket));
       this.packetSequenceNumbers.push(this.seqNum);
       this.packetTimestamps.push(this.timestamp);
       this.fecCounter += 1;
 
-      // Check if we've reached the group size to send an FEC packet
       if (this.fecCounter >= this.config.fecGroupSize!) {
-        // Create and send FEC packet
         const fecPacket = this._createFecPacket(
           this.packetBuffer,
           this.packetSequenceNumbers,
           this.packetTimestamps
         );
 
-        // Only send if we have a valid FEC packet
         if (fecPacket.length > 0) {
-          // Encrypt the FEC packet if using SRTP
-          let finalFecPacket: Buffer;
-          try {
-            if (this.srtpSession) {
-              finalFecPacket = this.srtpSession.protect(fecPacket);
-            } else {
-              finalFecPacket = fecPacket;
-            }
-          } catch (err) {
-            this.emit('error', {
-              type: T140RtpErrorType.ENCRYPTION_ERROR,
-              message:
-                'Failed to encrypt FEC packet with SRTP - packet not sent',
-              cause: err as Error,
-            });
-            // Don't fall back to unencrypted - abort the send operation for security
-            return;
-          }
-
-          // Send the FEC packet
-          this._sendPacket(finalFecPacket, (err) => {
-            if (err) {
-              this.emit('error', {
-                type: T140RtpErrorType.NETWORK_ERROR,
-                message: 'Failed to send FEC packet',
-                cause: err,
-              });
-            }
-          });
+          const finalFecPacket = this._encrypt(fecPacket, 'fec');
+          if (!finalFecPacket) return;
+          this._sendWithLabel(finalFecPacket, 'FEC packet');
         }
 
-        // Reset FEC counters and buffers
-        this.fecCounter = 0;
-        this.packetBuffer = [];
-        this.packetSequenceNumbers = [];
-        this.packetTimestamps = [];
+        this._resetFec();
       }
     }
 
-    // Update sequence number and timestamp for next packet
-    // Use modulo to keep within 16-bit range
     this.seqNum = (this.seqNum + 1) % 65536;
     this.timestamp = this.timestamp + this.config.timestampIncrement!;
   }
@@ -582,10 +493,8 @@ export class T140RtpTransport extends EventEmitter {
     callback?: (error?: Error) => void
   ): void {
     if (this.customTransport) {
-      // Use the custom transport
       this.customTransport.send(packet, callback);
     } else if (this.udpSocket) {
-      // Use the UDP socket
       this.udpSocket.send(
         packet,
         0,
@@ -595,9 +504,51 @@ export class T140RtpTransport extends EventEmitter {
         callback
       );
     } else {
-      // This should never happen, but just in case
       callback?.(new Error('No transport available for sending packets'));
     }
+  }
+
+  private _rememberRedPacket(packet: Buffer, max: number): void {
+    this.redPackets.push(Buffer.from(packet));
+    while (this.redPackets.length > max) this.redPackets.shift();
+  }
+
+  private _encrypt(packet: Buffer, kind: 'rtp' | 'fec' | 'fec-final'): Buffer | undefined {
+    try {
+      return this.srtpSession ? this.srtpSession.protect(packet) : packet;
+    } catch (err) {
+      const msg =
+        kind === 'rtp'
+          ? 'Failed to encrypt packet with SRTP - packet not sent'
+          : kind === 'fec'
+          ? 'Failed to encrypt FEC packet with SRTP - packet not sent'
+          : 'Failed to encrypt final FEC packet with SRTP - packet not sent';
+      this.emit('error', {
+        type: T140RtpErrorType.ENCRYPTION_ERROR,
+        message: msg,
+        cause: err as Error,
+      });
+      return undefined;
+    }
+  }
+
+  private _sendWithLabel(packet: Buffer, label: 'RTP packet' | 'FEC packet'): void {
+    this._sendPacket(packet, (err) => {
+      if (err) {
+        this.emit('error', {
+          type: T140RtpErrorType.NETWORK_ERROR,
+          message: `Failed to send ${label}`,
+          cause: err,
+        });
+      }
+    });
+  }
+
+  private _resetFec(): void {
+    this.fecCounter = 0;
+    this.packetBuffer = [];
+    this.packetSequenceNumbers = [];
+    this.packetTimestamps = [];
   }
 
   /**
@@ -616,42 +567,12 @@ export class T140RtpTransport extends EventEmitter {
     );
 
     if (fecPacket.length > 0) {
-      // Encrypt the FEC packet if using SRTP
-      let finalFecPacket: Buffer;
-      try {
-        if (this.srtpSession) {
-          finalFecPacket = this.srtpSession.protect(fecPacket);
-        } else {
-          finalFecPacket = fecPacket;
-        }
-      } catch (err) {
-        this.emit('error', {
-          type: T140RtpErrorType.ENCRYPTION_ERROR,
-          message:
-            'Failed to encrypt final FEC packet with SRTP - packet not sent',
-          cause: err as Error,
-        });
-        // Don't fall back to unencrypted - abort the send operation for security
-        return;
-      }
-
-      // Send the FEC packet using the appropriate transport
-      this._sendPacket(finalFecPacket, (err) => {
-        if (err) {
-          this.emit('error', {
-            type: T140RtpErrorType.NETWORK_ERROR,
-            message: 'Failed to send final FEC packet',
-            cause: err,
-          });
-        }
-      });
+      const finalFecPacket = this._encrypt(fecPacket, 'fec-final');
+      if (!finalFecPacket) return;
+      this._sendWithLabel(finalFecPacket, 'FEC packet');
     }
 
-    // Clear the buffers
-    this.packetBuffer = [];
-    this.packetSequenceNumbers = [];
-    this.packetTimestamps = [];
-    this.fecCounter = 0;
+    this._resetFec();
   }
 
   /**
