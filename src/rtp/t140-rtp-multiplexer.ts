@@ -6,7 +6,16 @@ import {
   T140RtpErrorType,
   TextDataStream,
 } from '../interfaces';
-import { DEFAULT_RTP_PORT } from '../utils/constants';
+import {
+  DEFAULT_CHAR_RATE_LIMIT,
+  DEFAULT_RTP_PORT,
+  INITIAL_CSRC_ID,
+  MIN_TOKENS_PER_STREAM,
+  MIN_TOKEN_BUCKET_VALUE,
+  SEND_INTERVAL_MS,
+  TOKEN_REFILL_RATE_DIVISOR,
+} from '../utils/constants';
+import { ErrorFactory } from '../utils/error-factory';
 import { extractTextFromChunk } from '../utils/extract-text';
 import { T140RtpTransport } from './t140-rtp-transport';
 
@@ -38,7 +47,7 @@ export class T140RtpMultiplexer extends EventEmitter {
   private sendInterval: NodeJS.Timeout;
   private lastSendTime: number = Date.now();
   private tokenBucket: number;
-  private nextCsrcId: number = 1;
+  private nextCsrcId: number = INITIAL_CSRC_ID;
 
   // Expose for testing purposes
   public getTransport(): T140RtpTransport {
@@ -78,9 +87,9 @@ export class T140RtpMultiplexer extends EventEmitter {
     });
 
     // Setup rate limiting for all streams combined
-    const charRateLimit = this.multiplexConfig.charRateLimit || 30;
+    const charRateLimit = this.multiplexConfig.charRateLimit || DEFAULT_CHAR_RATE_LIMIT;
     this.tokenBucket = charRateLimit;
-    const tokenRefillRate = charRateLimit / 1000;
+    const tokenRefillRate = charRateLimit / TOKEN_REFILL_RATE_DIVISOR;
 
     // Start the shared send interval
     this.sendInterval = setInterval(() => {
@@ -95,12 +104,15 @@ export class T140RtpMultiplexer extends EventEmitter {
       );
 
       // Process all streams in a round-robin fashion
-      if (this.streams.size > 0 && this.tokenBucket >= 1) {
+      if (this.streams.size > 0 && this.tokenBucket >= MIN_TOKEN_BUCKET_VALUE) {
         // Get all stream IDs
         const streamIds = Array.from(this.streams.keys());
 
         // Calculate tokens per stream (minimum 1)
-        const tokensPerStream = Math.max(1, Math.floor(this.tokenBucket / streamIds.length));
+        const tokensPerStream = Math.max(
+          MIN_TOKENS_PER_STREAM,
+          Math.floor(this.tokenBucket / streamIds.length)
+        );
 
         // Process characters from each stream
         for (const streamId of streamIds) {
@@ -119,7 +131,7 @@ export class T140RtpMultiplexer extends EventEmitter {
           }
         }
       }
-    }, 100);
+    }, SEND_INTERVAL_MS);
   }
 
   /**
@@ -139,10 +151,9 @@ export class T140RtpMultiplexer extends EventEmitter {
   ): boolean {
     // Check if stream with this ID already exists
     if (this.streams.has(id)) {
-      this.emit('error', {
-        type: T140RtpErrorType.INVALID_CONFIG,
-        message: `Stream with ID ${id} already exists in multiplexer`,
-      });
+      this.emit('error', ErrorFactory.INVALID_CONFIG(
+        `Stream with ID ${id} already exists in multiplexer`
+      ));
       return false;
     }
 

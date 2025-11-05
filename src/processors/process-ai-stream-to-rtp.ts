@@ -1,7 +1,13 @@
 import { ProcessorOptions, RtpConfig, TextDataStream } from '../interfaces';
 import { T140RtpTransport } from '../rtp/t140-rtp-transport';
 import { processT140BackspaceChars } from '../utils/backspace-processing';
-import { DEFAULT_RTP_PORT } from '../utils/constants';
+import {
+  DEFAULT_CHAR_RATE_LIMIT,
+  DEFAULT_RTP_PORT,
+  MIN_TOKEN_BUCKET_VALUE,
+  SEND_INTERVAL_MS,
+  TOKEN_REFILL_RATE_DIVISOR,
+} from '../utils/constants';
 import { extractTextFromChunk } from '../utils/extract-text';
 
 /**
@@ -32,11 +38,11 @@ export function createT140RtpTransport(
     let textBuffer = '';
     const processBackspaces =
       processorOptions.processBackspaces || rtpConfig.processBackspaces;
-    const charRateLimit = rtpConfig.charRateLimit || 30;
+    const charRateLimit = rtpConfig.charRateLimit || DEFAULT_CHAR_RATE_LIMIT;
     const charQueue: string[] = [];
     let lastSendTime = Date.now();
     let tokenBucket = charRateLimit;
-    const tokenRefillRate = charRateLimit / 1000;
+    const tokenRefillRate = charRateLimit / TOKEN_REFILL_RATE_DIVISOR;
 
     const sendInterval = setInterval(() => {
       const now = Date.now();
@@ -47,7 +53,7 @@ export function createT140RtpTransport(
         tokenBucket + elapsedMs * tokenRefillRate
       );
 
-      while (charQueue.length > 0 && tokenBucket >= 1) {
+      while (charQueue.length > 0 && tokenBucket >= MIN_TOKEN_BUCKET_VALUE) {
         const charsToSend = Math.min(Math.floor(tokenBucket), charQueue.length);
         const textChunk = charQueue.splice(0, charsToSend).join('');
 
@@ -56,7 +62,7 @@ export function createT140RtpTransport(
           tokenBucket -= textChunk.length;
         }
       }
-    }, 100);
+    }, SEND_INTERVAL_MS);
 
     stream.on('data', (chunk) => {
       const { text, metadata } = extractTextFromChunk(chunk);
@@ -100,15 +106,10 @@ export function createT140RtpTransport(
     });
 
     stream.on('error', (err) => {
-      console.error('AI Stream error:', err);
       clearInterval(sendInterval);
       transport.close();
     });
   };
-
-  transport.on('error', (err) => {
-    console.error(`T140RtpTransport error (${err.type}):`, err.message);
-  });
 
   return {
     transport,

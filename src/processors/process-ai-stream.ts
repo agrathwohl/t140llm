@@ -115,7 +115,6 @@ export function createWebSocketConnection(
     });
 
     stream.on('error', (err) => {
-      console.error('AI Stream error:', err);
       if (isConnected) {
         ws.close();
       }
