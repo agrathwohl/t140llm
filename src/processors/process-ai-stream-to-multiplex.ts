@@ -47,11 +47,6 @@ export function processAIStreamsToMultiplexedRtp(
     multiplexer.addStream(id, stream, {}, processorOptions);
   }
 
-  // Setup error handling
-  multiplexer.on('error', (err) => {
-    console.error('Multiplexer error:', err);
-  });
-
   return multiplexer;
 }
 

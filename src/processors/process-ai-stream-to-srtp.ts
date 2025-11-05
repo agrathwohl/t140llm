@@ -88,15 +88,9 @@ export function createT140SrtpTransport(
 
     // Handle errors from the input stream
     stream.on('error', (err) => {
-      console.error('AI Stream error:', err);
       transport.close();
     });
   };
-
-  // Forward errors from the transport for debugging
-  transport.on('error', (err) => {
-    console.error(`T140RtpTransport error (${err.type}):`, err.message);
-  });
 
   return {
     transport,

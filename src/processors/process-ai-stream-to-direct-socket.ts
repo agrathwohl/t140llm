@@ -54,11 +54,7 @@ export function createDirectSocketTransport(
 
   const sendPacket = (packet: Buffer) => {
     if (rtpConfig.customTransport) {
-      transport.send(packet, (err) => {
-        if (err) {
-          console.error('Error sending packet to custom transport:', err);
-        }
-      });
+      transport.send(packet);
     } else {
       (transport as net.Socket).write(packet);
     }
@@ -168,7 +164,6 @@ export function createDirectSocketTransport(
 
     stream.on('end', closeTransport);
     stream.on('error', (err) => {
-      console.error('AI Stream error:', err);
       closeTransport();
     });
   };
