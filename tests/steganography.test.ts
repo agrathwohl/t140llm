@@ -125,50 +125,28 @@ describe('Steganography Tests', () => {
       console.error = originalConsoleError;
     });
 
-    it('should initialize with a custom algorithm', () => {
-      const customAlgorithm = `
-        function encode(data, cover) {
-          // Simple XOR algorithm for testing
-          const result = Buffer.from(cover);
-          for (let i = 0; i < Math.min(data.length, cover.length - 4); i++) {
-            result[i + 4] = cover[i + 4] ^ data[i];
-          }
-          // Store length in first 4 bytes
-          result[0] = data.length & 0xFF;
-          result[1] = (data.length >> 8) & 0xFF;
-          result[2] = (data.length >> 16) & 0xFF;
-          result[3] = (data.length >> 24) & 0xFF;
-          return result;
-        }
-        
-        function decode(stegData) {
-          // Get length from first 4 bytes
-          const length = stegData[0] | (stegData[1] << 8) | (stegData[2] << 16) | (stegData[3] << 24);
-          const result = Buffer.alloc(length);
-          
-          // Reverse the XOR operation
-          for (let i = 0; i < length; i++) {
-            result[i] = stegData[i + 4] ^ stegData[i + 4];
-          }
-          return result;
-        }
-      `;
-      
+    it('should work with algorithm config option (uses LSB internally)', () => {
+      // Note: Custom algorithm strings are no longer supported.
+      // The implementation now uses llm-steg's LSBAlgorithm directly.
+      // This test verifies the transport still works when algorithm is specified.
       const coverMedia = [Buffer.alloc(1024, 0xAA)];
-      
-      const stegTransport = new StegTransport(mockTransport, { 
+
+      const stegTransport = new StegTransport(mockTransport, {
         enabled: true,
         encodeMode: 'fixed',
-        algorithm: customAlgorithm,
+        algorithm: 'lsb', // Algorithm name (custom strings no longer supported)
         coverMedia
       });
-      
-      // Our implementation just returns zeros due to XOR with itself,
-      // so we're just checking the transport works, not the algorithm itself
-      const data = Buffer.from('custom algorithm test');
+
+      const data = Buffer.from('algorithm test');
       stegTransport.send(data);
-      
+
       expect(mockTransport.send).toHaveBeenCalled();
+
+      // Verify the data can be decoded
+      const sentData = mockTransport.send.mock.calls[0][0];
+      const decodedData = stegTransport.decode(sentData);
+      expect(decodedData.toString()).toEqual('algorithm test');
     });
 
     it('should close the inner transport when closed', () => {
