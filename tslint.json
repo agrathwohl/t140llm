@@ -4,6 +4,10 @@
   ],
   "rules": {
     "max-classes-per-file": false,
-    "no-shadowed-variable": false
+    "no-shadowed-variable": false,
+    "ter-indent": false,
+    "object-curly-spacing": false,
+    "brace-style": false,
+    "array-bracket-spacing": false
   }
 }

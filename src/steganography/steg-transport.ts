@@ -1,11 +1,11 @@
+import {
+  LSBAlgorithm,
+  StegConfig as LlmStegConfig,
+  StegEngine
+} from 'llm-steg';
 import { TransportStream } from '../interfaces';
 import { StegConfig } from './steg-config.interface';
 import { StegTransport as IStegTransport } from './steg-transport.interface';
-import {
-  StegEngine,
-  LSBAlgorithm,
-  StegConfig as LlmStegConfig
-} from 'llm-steg';
 
 /**
  * Steganography transport implementation using llm-steg package.
