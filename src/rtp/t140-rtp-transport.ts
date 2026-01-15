@@ -302,12 +302,10 @@ export class T140RtpTransport extends EventEmitter {
       const payloadOffset = RTP_HEADER_SIZE;
       const payloadLength = packet.length - payloadOffset;
       for (let j = 0; j < payloadLength; j += 1) {
-        // XOR byte-by-byte
+        // XOR byte-by-byte for FEC parity calculation (RFC 5109)
         if (j < fecPayload.length) {
-          // Use a non-bitwise approach
-          // Split into two operations to avoid exceeding line length
-          const xorResult = fecPayload[j] === packet[payloadOffset + j] ? 0 : 1;
-          fecPayload[j] = fecPayload[j] ? xorResult : packet[payloadOffset + j];
+          // tslint:disable-next-line:no-bitwise
+          fecPayload[j] ^= packet[payloadOffset + j];
         }
       }
     }
