@@ -4,7 +4,9 @@
     "rootDir": "src",
     "outDir": "dist",
     "declarationDir": "dist",
-    "module": "CommonJS"
+    "module": "CommonJS",
+    "skipLibCheck": true,
+    "importsNotUsedAsValues": "remove"
   },
   "include": ["src/**/*.ts"],
   "exclude": ["dist", "node_modules"]

@@ -5,7 +5,7 @@ import {
 } from 'llm-steg';
 import { TransportStream } from '../interfaces';
 import { StegConfig } from './steg-config.interface';
-import { StegTransport as IStegTransport } from './steg-transport.interface';
+import { IStegTransport } from './steg-transport.interface';
 
 /**
  * Steganography transport implementation using llm-steg package.

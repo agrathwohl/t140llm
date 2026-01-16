@@ -9,7 +9,7 @@ export * from './steganography';
 // For backward compatibility
 import { T140RtpError, T140RtpErrorType } from './interfaces/t140-rtp-error.interface';
 import {
-  createT140WebSocketConnection,
+  createWebSocketConnection,
   processAIStream
 } from './processors/process-ai-stream';
 import {
@@ -86,7 +86,7 @@ export {
   RtpConfigWithSteg,
 
   // Pre-create transport functions
-  createT140WebSocketConnection,
+  createWebSocketConnection,
   createT140RtpTransport,
   createT140SrtpTransport,
   createDirectSocketTransport,
