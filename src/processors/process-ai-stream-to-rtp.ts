@@ -1,6 +1,6 @@
 import { ProcessorOptions, RtpConfig, TextDataStream } from '../interfaces';
 import { T140RtpTransport } from '../rtp/t140-rtp-transport';
-import { processT140BackspaceChars } from '../utils/backspace-processing';
+import { processT140BackspaceChars, toGraphemes } from '../utils/backspace-processing';
 import {
   DEFAULT_CHAR_RATE_LIMIT,
   DEFAULT_RTP_PORT,
@@ -79,10 +79,10 @@ export function attachStreamToRtpTransport(
       textBuffer = updatedBuffer;
 
       if (processedText) {
-        charQueue.push(...processedText);
+        charQueue.push(...toGraphemes(processedText));
       }
     } else {
-      charQueue.push(...text);
+      charQueue.push(...toGraphemes(text));
     }
   });
 

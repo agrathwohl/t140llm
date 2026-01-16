@@ -19,10 +19,15 @@ const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });
 
 /**
  * Split a string into grapheme clusters (user-perceived characters)
+ * Useful for text processing that needs to respect Unicode boundaries
+ *
  * @param str The string to split
  * @returns Array of grapheme clusters
+ * @example
+ * toGraphemes('👨‍👩‍👧') // ['👨‍👩‍👧'] - family emoji stays together
+ * toGraphemes('café')    // ['c', 'a', 'f', 'é'] - combining accent handled
  */
-function toGraphemes(str: string): string[] {
+export function toGraphemes(str: string): string[] {
   return Array.from(segmenter.segment(str), ({ segment }) => segment);
 }
 
@@ -39,8 +44,8 @@ export function processT140BackspaceChars(
   textBuffer: string = ''
 ): T140BackspaceResult {
   if (!text.includes(BACKSPACE) && textBuffer === '') {
-    // Fast path: if there are no backspaces and no buffer, just return the text as is
-    return { processedText: text, updatedBuffer: '' };
+    // Fast path: no backspaces and no existing buffer - text becomes the new buffer
+    return { processedText: text, updatedBuffer: text };
   }
 
   let processedText = '';

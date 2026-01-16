@@ -6,6 +6,7 @@ import {
   T140RtpErrorType,
   TextDataStream,
 } from '../interfaces';
+import { toGraphemes } from '../utils/backspace-processing';
 import {
   DEFAULT_CHAR_RATE_LIMIT,
   DEFAULT_RTP_PORT,
@@ -268,8 +269,8 @@ export class T140RtpMultiplexer extends EventEmitter {
 
       // Handle text content
       if (text) {
-        // Add to character queue
-        streamInfo.charQueue.push(...text);
+        // Add to character queue using grapheme clusters for proper Unicode handling
+        streamInfo.charQueue.push(...toGraphemes(text));
       }
     });
 
