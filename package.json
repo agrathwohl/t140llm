@@ -1,6 +1,6 @@
 {
   "name": "t140llm",
-  "version": "0.0.14",
+  "version": "0.0.15",
   "type": "commonjs",
   "description": "",
   "keywords": [
@@ -20,10 +20,7 @@
     "url": ""
   },
   "files": [
-    "dist/*.*js.map",
-    "dist/*.*js",
-    "dist/*.d.ts.map",
-    "dist/*.d.ts"
+    "dist"
   ],
   "main": "dist/index",
   "module": "dist/index.mjs",
