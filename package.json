@@ -1,6 +1,6 @@
 {
   "name": "t140llm",
-  "version": "0.0.17",
+  "version": "0.0.18",
   "type": "commonjs",
   "description": "",
   "keywords": [
@@ -41,7 +41,6 @@
   "dependencies": {
     "@types/ws": "7.4.7",
     "debug": "^4.3.4",
-    "llm-steg": "github:agrathwohl/llm-steg",
     "node-unix-socket": "^0.2.7",
     "werift-rtp": "^0.8.4",
     "ws": "^8.18.1"

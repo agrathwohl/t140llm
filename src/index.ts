@@ -4,7 +4,8 @@ export * from './utils';
 export * from './rtp';
 export * from './processors';
 export * from './transport';
-export * from './steganography';
+// Steganography is optional - import from 't140llm/steganography' if needed
+// export * from './steganography';
 
 // For backward compatibility
 import { T140RtpError, T140RtpErrorType } from './interfaces/t140-rtp-error.interface';
@@ -26,13 +27,7 @@ import {
 } from './processors/process-ai-stream-to-srtp';
 import { createRtpPacket } from './rtp/create-rtp-packet';
 import { T140RtpTransport } from './rtp/t140-rtp-transport';
-import { RtpConfigWithSteg } from './steganography/rtp-config-extensions';
-import { StegConfig } from './steganography/steg-config.interface';
-import { StegTransport } from './steganography/steg-transport';
-import {
-  createStegT140RtpTransport,
-  processAIStreamToStegRtp
-} from './steganography/transport-factory';
+// Steganography imports removed - optional module
 import { createWebSocketServer } from './transport/websocket-server';
 import { WebSocketServerOptions } from './transport/websocket-server';
 import { processT140BackspaceChars } from './utils/backspace-processing';
@@ -78,12 +73,7 @@ export {
   DemultiplexedStream,
   DemultiplexedStreamImpl,
 
-  // Steganography functions
-  createStegT140RtpTransport,
-  processAIStreamToStegRtp,
-  StegTransport,
-  StegConfig,
-  RtpConfigWithSteg,
+  // Steganography removed - optional module, import from 't140llm/steganography' if needed
 
   // Pre-create transport functions
   createWebSocketConnection,

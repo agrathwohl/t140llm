@@ -2,7 +2,7 @@ import {
   LSBAlgorithm,
   StegConfig as LlmStegConfig,
   StegEngine
-} from 'llm-steg';
+} from '@agrathwohl/llm-steg';
 import { TransportStream } from '../interfaces';
 import { StegConfig } from './steg-config.interface';
 import { StegTransportInterface } from './steg-transport.interface';
