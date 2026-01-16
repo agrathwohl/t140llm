@@ -54,7 +54,7 @@ export function createDirectSocketTransport(
 
   const sendPacket = (packet: Buffer) => {
     if (rtpConfig.customTransport) {
-      transport.send(packet);
+      (transport as TransportStream).send(packet);
     } else {
       (transport as net.Socket).write(packet);
     }
@@ -163,7 +163,7 @@ export function createDirectSocketTransport(
     };
 
     stream.on('end', closeTransport);
-    stream.on('error', (err) => {
+    stream.on('error', (_err) => {
       closeTransport();
     });
   };
@@ -312,7 +312,7 @@ export function attachStreamToDirectSocketTransport(
   };
 
   stream.on('end', closeTransport);
-  stream.on('error', (err) => {
+  stream.on('error', (_err) => {
     closeTransport();
   });
 }

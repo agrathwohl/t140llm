@@ -1,5 +1,5 @@
 import WebSocket from 'ws';
-import { LLMMetadata, ProcessorOptions, TextDataStream } from '../interfaces';
+import { ProcessorOptions, TextDataStream } from '../interfaces';
 import { processT140BackspaceChars } from '../utils/backspace-processing';
 import { WS_SERVER_PORT } from '../utils/constants';
 import { extractTextFromChunk } from '../utils/extract-text';
@@ -20,6 +20,7 @@ interface WebSocketOptions {
 // Interface for options when attaching a stream
 interface AttachStreamOptions extends ProcessorOptions {
   sendMetadataOverWebsocket?: boolean;
+  tlsOptions?: TLSOptions;
 }
 
 // Function to create a WebSocket connection
@@ -114,7 +115,7 @@ export function createWebSocketConnection(
       }
     });
 
-    stream.on('error', (err) => {
+    stream.on('error', (_err) => {
       if (isConnected) {
         ws.close();
       }
@@ -192,7 +193,7 @@ export function attachStreamToWebSocket(
     }
   });
 
-  stream.on('error', (err) => {
+  stream.on('error', (_err) => {
     if (isConnected) {
       ws.close();
     }

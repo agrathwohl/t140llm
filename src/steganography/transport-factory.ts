@@ -22,7 +22,7 @@ function createDefaultTransport(
         data.length,
         remotePort,
         remoteAddress,
-        callback
+        callback ? (err) => callback(err ?? undefined) : undefined
       );
     },
     close(): void {

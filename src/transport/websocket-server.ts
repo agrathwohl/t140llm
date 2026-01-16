@@ -1,5 +1,4 @@
 import * as fs from 'fs';
-import * as http from 'http';
 import * as https from 'https';
 import * as net from 'net';
 import WebSocket from 'ws';
@@ -29,7 +28,7 @@ export function createWebSocketServer(options: WebSocketServerOptions = {}): Web
   if (options.tls) {
     try {
       // Read certificate files
-      const httpsOptions = {
+      const httpsOptions: https.ServerOptions = {
         cert: fs.readFileSync(options.tls.cert),
         key: fs.readFileSync(options.tls.key),
       };

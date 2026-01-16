@@ -94,7 +94,7 @@ export function attachStreamToRtpTransport(
     transport.close();
   });
 
-  stream.on('error', (err) => {
+  stream.on('error', (_err) => {
     clearInterval(sendInterval);
     transport.close();
   });

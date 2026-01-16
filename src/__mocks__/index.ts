@@ -6,7 +6,6 @@ const DEFAULT_T140_PAYLOAD_TYPE = 96;
 const DEFAULT_SSRC = 12345;
 const SEQPACKET_SOCKET_PATH = '/tmp/seqpacket_socket';
 const DEFAULT_RTP_PORT = 5004;
-const DEFAULT_SRTP_PORT = 5006;
 
 // Interface for any streaming data source
 interface TextDataStream extends EventEmitter {
@@ -127,15 +126,6 @@ enum T140RtpErrorType {
   RESOURCE_ERROR = 'RESOURCE_ERROR', // Resource allocation/deallocation errors
 }
 
-/**
- * Interface for T140RtpTransport Error objects
- */
-interface T140RtpError {
-  type: T140RtpErrorType;
-  message: string;
-  cause?: Error;
-}
-
 // Mock T140RtpTransport class
 class T140RtpTransport extends EventEmitter {
   private seqNum: number;
@@ -220,11 +210,11 @@ class T140RtpTransport extends EventEmitter {
 }
 
 // Simulate interval for rate limiting
-function createMockInterval(callback: () => void, interval: number): number {
+function createMockInterval(callback: () => void, _interval: number): ReturnType<typeof setTimeout> {
   /* tslint:disable:no-empty */
   const id = setTimeout(() => {}, 0); // Just need an ID
   callback(); // Call immediately for testing
-  return id as unknown as number;
+  return id;
 }
 
 // Validate SRTP config (matches real implementation)
@@ -262,8 +252,8 @@ function validateSrtpConfig(srtpConfig: SrtpConfig): void {
 const processAIStream = jest.fn().mockImplementation(
   (
     stream: TextDataStream,
-    websocketUrl?: string,
-    options?: any,
+    _websocketUrl?: string,
+    _options?: any,
     existingConnection?: any
   ) => {
     // If existingConnection provided, use it directly
@@ -418,7 +408,7 @@ const processAIStreamToDirectSocket = jest
   .mockImplementation(
     (
       stream: TextDataStream,
-      socketPath?: string,
+      _socketPath?: string,
       rtpConfig?: RtpConfig,
       existingTransport?: TransportStream
     ) => {

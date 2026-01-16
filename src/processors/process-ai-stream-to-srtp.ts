@@ -108,7 +108,7 @@ export function attachStreamToSrtpTransport(
   });
 
   // Handle errors from the input stream
-  stream.on('error', (err) => {
+  stream.on('error', (_err) => {
     transport.close();
   });
 }

@@ -76,7 +76,6 @@ export class T140StreamDemultiplexer extends EventEmitter {
       // In a real implementation, you would parse the RTP header properly
 
       let streamId: string | undefined;
-      let payload: Buffer;
 
       // Extract CSRC fields if using them for stream identification
       if (useCSRC) {
@@ -90,9 +89,6 @@ export class T140StreamDemultiplexer extends EventEmitter {
           // CSRC identifiers start at byte 12 in the RTP header
           const csrcId = data.readUInt32BE(12);
           streamId = `csrc:${csrcId}`;
-
-          // Skip header + CSRC list to get payload
-          payload = data.slice(12 + (csrcCount * 4));
         } else {
           // No CSRC, can't identify stream
           this.emit('error', new Error('No CSRC identifiers found in packet'));
@@ -117,8 +113,7 @@ export class T140StreamDemultiplexer extends EventEmitter {
             const metadata = JSON.parse(metadataContent);
 
             if (metadata.streamId) {
-              streamId = metadata.streamId;
-              this._processMetadata(streamId, metadata);
+              this._processMetadata(metadata.streamId, metadata);
             } else {
               this.emit('error', new Error('Metadata packet missing streamId'));
             }

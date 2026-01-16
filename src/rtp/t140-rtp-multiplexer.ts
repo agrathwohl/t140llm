@@ -3,7 +3,6 @@ import {
   ProcessorOptions,
   RtpConfig,
   T140RtpError,
-  T140RtpErrorType,
   TextDataStream,
 } from '../interfaces';
 import { toGraphemes } from '../utils/backspace-processing';
@@ -310,7 +309,7 @@ export class T140RtpMultiplexer extends EventEmitter {
     clearInterval(this.sendInterval);
 
     // Send any remaining characters from all streams
-    for (const [id, streamInfo] of this.streams.entries()) {
+    for (const [_id, streamInfo] of this.streams.entries()) {
       if (streamInfo.charQueue.length > 0) {
         const textChunk = streamInfo.charQueue.join('');
         this._sendText(textChunk, streamInfo);

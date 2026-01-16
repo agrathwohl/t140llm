@@ -4,8 +4,6 @@ import { SrtpContext, SrtpPolicy, SrtpSession } from 'werift-rtp';
 import {
   RtpConfig,
   SrtpConfig,
-  T140RtpError,
-  T140RtpErrorType,
   TransportStream,
 } from '../interfaces';
 import {
@@ -13,7 +11,6 @@ import {
   BIT_SHIFT_16,
   BIT_SHIFT_32,
   BIT_SHIFT_64,
-  DEFAULT_CHAR_RATE_LIMIT,
   DEFAULT_FEC_GROUP_SIZE,
   DEFAULT_FEC_PAYLOAD_TYPE,
   DEFAULT_REDUNDANCY_LEVEL,
@@ -581,7 +578,7 @@ export class T140RtpTransport extends EventEmitter {
         packet.length,
         this.remotePort,
         this.remoteAddress,
-        callback
+        callback ? (err) => callback(err ?? undefined) : undefined
       );
     } else {
       // This should never happen, but just in case

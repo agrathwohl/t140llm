@@ -36,7 +36,7 @@ import {
 import { createWebSocketServer } from './transport/websocket-server';
 import { WebSocketServerOptions } from './transport/websocket-server';
 import { processT140BackspaceChars } from './utils/backspace-processing';
-import { BACKSPACE, SEQPACKET_SOCKET_PATH, WS_SERVER_PORT } from './utils/constants';
+import { BACKSPACE, SEQPACKET_SOCKET_PATH } from './utils/constants';
 import { extractTextFromChunk } from './utils/extract-text';
 import { createSrtpKeysFromPassphrase, generateSecureSSRC } from './utils/security';
 

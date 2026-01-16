@@ -56,7 +56,7 @@ export class StegTransport implements IStegTransport {
    * Send data through the transport with steganography applied
    */
   public send(data: Buffer, callback?: (error?: Error) => void): void {
-    if (!this.config.enabled || this.config.coverMedia.length === 0) {
+    if (!this.config.enabled || !this.config.coverMedia || this.config.coverMedia.length === 0) {
       // If steganography is disabled or no cover media available,
       // send data directly through inner transport
       this.innerTransport.send(data, callback);
