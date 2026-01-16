@@ -9,7 +9,27 @@ export interface T140BackspaceResult {
 }
 
 /**
+ * Grapheme segmenter for proper Unicode handling per T.140 spec
+ * Uses Intl.Segmenter to correctly handle:
+ * - Emoji (including ZWJ sequences like family emoji)
+ * - Combining characters (like café with combining acute)
+ * - Other complex grapheme clusters
+ */
+const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });
+
+/**
+ * Split a string into grapheme clusters (user-perceived characters)
+ * @param str The string to split
+ * @returns Array of grapheme clusters
+ */
+function toGraphemes(str: string): string[] {
+  return Array.from(segmenter.segment(str), ({ segment }) => segment);
+}
+
+/**
  * Process text to handle T.140 backspace characters
+ * Properly handles Unicode grapheme clusters per ITU-T T.140 / RFC 4103
+ *
  * @param text The input text that may contain backspace characters
  * @param textBuffer Optional existing text buffer to apply backspaces to
  * @returns Object containing the processed text ready for sending and updated buffer state
@@ -24,28 +44,26 @@ export function processT140BackspaceChars(
   }
 
   let processedText = '';
-  let updatedBuffer = textBuffer;
-  let currentPos = 0;
+  // Convert buffer to grapheme array for proper Unicode handling
+  const bufferGraphemes = toGraphemes(textBuffer);
 
-  // Process each character in the input text
-  while (currentPos < text.length) {
-    const char = text[currentPos];
+  // Process input by grapheme clusters
+  const inputGraphemes = toGraphemes(text);
 
-    if (char === BACKSPACE) {
-      // Handle backspace by removing the last character from the buffer
-      if (updatedBuffer.length > 0) {
-        // Remove the last character from the buffer
-        updatedBuffer = updatedBuffer.slice(0, -1);
+  for (const grapheme of inputGraphemes) {
+    if (grapheme === BACKSPACE) {
+      // Handle backspace by removing the last grapheme cluster from the buffer
+      if (bufferGraphemes.length > 0) {
+        bufferGraphemes.pop();
         // Add backspace to the processed text to be sent
         processedText += BACKSPACE;
       }
     } else {
-      // Add normal character to both buffer and processed text
-      updatedBuffer += char;
-      processedText += char;
+      // Add normal grapheme to both buffer and processed text
+      bufferGraphemes.push(grapheme);
+      processedText += grapheme;
     }
-    currentPos += 1;
   }
 
-  return { processedText, updatedBuffer };
+  return { processedText, updatedBuffer: bufferGraphemes.join('') };
 }
