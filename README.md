@@ -1,8 +1,11 @@
 <div align="center" style="text-align: center;">
-  
+
   ![T140LLM](logo.gif)
 
   <h1 style="border-bottom: none;">t140llm</h1>
+
+  [![npm version](https://img.shields.io/npm/v/t140llm)](https://www.npmjs.com/package/t140llm)
+  [![npm downloads](https://img.shields.io/npm/dm/t140llm)](https://www.npmjs.com/package/t140llm)
 
   <p>A TypeScript library to convert LLM streaming responses into T.140 real-time text format for SIP, WebRTC and (S)RTP applications</p>
 </div>
