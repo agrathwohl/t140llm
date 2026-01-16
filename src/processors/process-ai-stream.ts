@@ -124,6 +124,81 @@ export function createWebSocketConnection(
   return { attachStream, connection: ws };
 }
 
+/**
+ * Attach a stream to an existing WebSocket connection
+ *
+ * @param ws The WebSocket connection to attach the stream to
+ * @param stream The stream to attach
+ * @param processorOptions Processor options for handling the stream
+ */
+export function attachStreamToWebSocket(
+  ws: WebSocket,
+  stream: TextDataStream,
+  processorOptions: AttachStreamOptions = {}
+): void {
+  let buffer = '';
+  let textBuffer = '';
+  const processBackspaces = processorOptions.processBackspaces === true;
+  const handleMetadata = processorOptions.handleMetadata !== false;
+  const sendMetadataOverWebsocket =
+    processorOptions.sendMetadataOverWebsocket === true;
+
+  let isConnected = ws.readyState === WebSocket.OPEN;
+
+  ws.on('open', () => {
+    isConnected = true;
+    if (buffer) {
+      ws.send(buffer);
+      buffer = '';
+    }
+  });
+
+  stream.on('data', (chunk) => {
+    const { text, metadata } = extractTextFromChunk(chunk);
+
+    if (handleMetadata && metadata) {
+      stream.emit('metadata', metadata);
+      processorOptions.metadataCallback?.(metadata);
+
+      if (sendMetadataOverWebsocket && isConnected) {
+        ws.send(JSON.stringify({ type: 'metadata', content: metadata }));
+      }
+    }
+
+    if (!text) return;
+
+    let textToSend = text;
+
+    if (processBackspaces) {
+      const { processedText, updatedBuffer } = processT140BackspaceChars(
+        text,
+        textBuffer
+      );
+      textBuffer = updatedBuffer;
+      textToSend = processedText;
+      if (!textToSend) return;
+    }
+
+    if (isConnected) {
+      ws.send(textToSend);
+    } else {
+      buffer += textToSend;
+    }
+  });
+
+  stream.on('end', () => {
+    if (isConnected) {
+      ws.close();
+    }
+  });
+
+  stream.on('error', (err) => {
+    if (isConnected) {
+      ws.close();
+    }
+  });
+}
+
 // Function to process an AI stream and attach it to a WebSocket connection
 export function processAIStream(
   stream: TextDataStream,
@@ -131,18 +206,16 @@ export function processAIStream(
   options: AttachStreamOptions = {},
   existingConnection?: WebSocket
 ): WebSocket {
-  const processorOptions: ProcessorOptions = {
+  const processorOptions: AttachStreamOptions = {
     processBackspaces: options.processBackspaces,
     handleMetadata: options.handleMetadata,
     metadataCallback: options.metadataCallback,
-    sendMetadataOverTransport: options.sendMetadataOverWebsocket,
+    sendMetadataOverWebsocket: options.sendMetadataOverWebsocket,
   };
 
   if (existingConnection) {
-    const { attachStream } = createWebSocketConnection(websocketUrl, {
-      tlsOptions: options.tlsOptions,
-    });
-    attachStream(stream, processorOptions);
+    // Attach stream directly to the existing connection
+    attachStreamToWebSocket(existingConnection, stream, processorOptions);
     return existingConnection;
   }
 

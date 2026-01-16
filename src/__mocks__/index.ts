@@ -228,7 +228,42 @@ function createMockInterval(callback: () => void, interval: number): number {
 }
 
 // Mock process functions
-const processAIStream = jest.fn();
+const processAIStream = jest.fn().mockImplementation(
+  (
+    stream: TextDataStream,
+    websocketUrl?: string,
+    options?: any,
+    existingConnection?: any
+  ) => {
+    // If existingConnection provided, use it directly
+    if (existingConnection) {
+      stream.on('data', (chunk) => {
+        const text = extractTextFromChunk(chunk);
+        if (text && existingConnection.send) {
+          existingConnection.send(text);
+        }
+      });
+
+      stream.on('end', () => {
+        if (existingConnection.close) existingConnection.close();
+      });
+
+      stream.on('error', () => {
+        if (existingConnection.close) existingConnection.close();
+      });
+
+      return existingConnection;
+    }
+
+    // Return a mock WebSocket
+    const mockWs: any = new EventEmitter();
+    mockWs.send = jest.fn();
+    mockWs.close = jest.fn();
+    mockWs.readyState = 1; // OPEN
+    return mockWs;
+  }
+);
+
 const processAIStreamToRtp = jest
   .fn()
   .mockImplementation(
@@ -236,8 +271,27 @@ const processAIStreamToRtp = jest
       stream: TextDataStream,
       remoteAddress: string,
       remotePort?: number,
-      rtpConfig?: RtpConfig
+      rtpConfig?: RtpConfig,
+      existingTransport?: T140RtpTransport
     ) => {
+      // If existingTransport provided, use it directly
+      if (existingTransport) {
+        stream.on('data', (chunk) => {
+          const text = extractTextFromChunk(chunk);
+          if (text) existingTransport.sendText(text);
+        });
+
+        stream.on('end', () => {
+          existingTransport.close();
+        });
+
+        stream.on('error', () => {
+          existingTransport.close();
+        });
+
+        return existingTransport;
+      }
+
       const transport = new T140RtpTransport(
         remoteAddress,
         remotePort,
@@ -277,8 +331,29 @@ const processAIStreamToSrtp = jest
       stream: TextDataStream,
       remoteAddress: string,
       srtpConfig: SrtpConfig,
-      remotePort?: number
+      remotePort?: number,
+      existingTransport?: T140RtpTransport
     ) => {
+      // If existingTransport provided, use it directly
+      if (existingTransport) {
+        existingTransport.setupSrtp(srtpConfig);
+
+        stream.on('data', (chunk) => {
+          const text = extractTextFromChunk(chunk);
+          if (text) existingTransport.sendText(text);
+        });
+
+        stream.on('end', () => {
+          existingTransport.close();
+        });
+
+        stream.on('error', () => {
+          existingTransport.close();
+        });
+
+        return existingTransport;
+      }
+
       const transport = new T140RtpTransport(
         remoteAddress,
         remotePort,
@@ -307,8 +382,38 @@ const processAIStreamToSrtp = jest
 const processAIStreamToDirectSocket = jest
   .fn()
   .mockImplementation(
-    (stream: TextDataStream, socketPath?: string, rtpConfig?: RtpConfig) => {
-      // If a custom transport is provided, use it
+    (
+      stream: TextDataStream,
+      socketPath?: string,
+      rtpConfig?: RtpConfig,
+      existingTransport?: TransportStream
+    ) => {
+      // If existingTransport provided, use it directly
+      if (existingTransport) {
+        stream.on('data', (chunk) => {
+          const text = extractTextFromChunk(chunk);
+          if (text) {
+            // Create an RTP packet and send through existing transport
+            const packet = createRtpPacket(0, 0, text, {
+              payloadType: rtpConfig?.payloadType,
+              ssrc: rtpConfig?.ssrc,
+            });
+            existingTransport.send(packet);
+          }
+        });
+
+        stream.on('end', () => {
+          if (existingTransport.close) existingTransport.close();
+        });
+
+        stream.on('error', () => {
+          if (existingTransport.close) existingTransport.close();
+        });
+
+        return existingTransport;
+      }
+
+      // If a custom transport is provided in config, use it
       if (rtpConfig?.customTransport) {
         const customTransport = rtpConfig.customTransport;
 

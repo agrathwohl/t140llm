@@ -5,6 +5,78 @@ import { DEFAULT_SRTP_PORT } from '../utils/constants';
 import { extractTextFromChunk } from '../utils/extract-text';
 
 /**
+ * Attach a stream to an existing T140 SRTP transport
+ *
+ * @param transport The transport to attach the stream to
+ * @param stream The stream to attach
+ * @param srtpConfig SRTP configuration options
+ * @param processorOptions Processor options for handling the stream
+ */
+export function attachStreamToSrtpTransport(
+  transport: T140RtpTransport,
+  stream: TextDataStream,
+  srtpConfig: SrtpConfig,
+  processorOptions: ProcessorOptions = {}
+): void {
+  let textBuffer = ''; // Buffer to track accumulated text for backspace handling
+  const processBackspaces =
+    processorOptions.processBackspaces === true ||
+    srtpConfig.processBackspaces === true;
+  const handleMetadata =
+    processorOptions.handleMetadata !== false &&
+    srtpConfig.handleMetadata !== false; // Default to true
+
+  // Process the AI stream and send chunks over SRTP
+  stream.on('data', (chunk) => {
+    // Extract the text content and metadata from the chunk
+    const { text, metadata } = extractTextFromChunk(chunk);
+
+    // Handle metadata if present
+    if (handleMetadata && metadata) {
+      // Emit metadata event for external handling
+      stream.emit('metadata', metadata);
+
+      // Call metadata callback if provided
+      const metadataCallback =
+        processorOptions.metadataCallback || srtpConfig.metadataCallback;
+      if (metadataCallback && typeof metadataCallback === 'function') {
+        metadataCallback(metadata);
+      }
+    }
+
+    // Skip if no text content
+    if (!text) return;
+
+    if (processBackspaces) {
+      // Process backspaces in the T.140 stream
+      const { processedText, updatedBuffer } = processT140BackspaceChars(
+        text,
+        textBuffer
+      );
+      textBuffer = updatedBuffer;
+
+      // Only send if there's something to send
+      if (processedText) {
+        transport.sendText(processedText);
+      }
+    } else {
+      // Send text directly without backspace processing
+      transport.sendText(text);
+    }
+  });
+
+  stream.on('end', () => {
+    // Close the transport when stream ends
+    transport.close();
+  });
+
+  // Handle errors from the input stream
+  stream.on('error', (err) => {
+    transport.close();
+  });
+}
+
+/**
  * Create a T140 SRTP transport that can be used to send T.140 data securely
  *
  * @param remoteAddress Remote address to send packets to
@@ -34,62 +106,7 @@ export function createT140SrtpTransport(
     stream: TextDataStream,
     processorOptions: ProcessorOptions = {}
   ) => {
-    let textBuffer = ''; // Buffer to track accumulated text for backspace handling
-    const processBackspaces =
-      processorOptions.processBackspaces === true ||
-      srtpConfig.processBackspaces === true;
-    const handleMetadata =
-      processorOptions.handleMetadata !== false &&
-      srtpConfig.handleMetadata !== false; // Default to true
-
-    // Process the AI stream and send chunks over SRTP
-    stream.on('data', (chunk) => {
-      // Extract the text content and metadata from the chunk
-      const { text, metadata } = extractTextFromChunk(chunk);
-
-      // Handle metadata if present
-      if (handleMetadata && metadata) {
-        // Emit metadata event for external handling
-        stream.emit('metadata', metadata);
-
-        // Call metadata callback if provided
-        const metadataCallback =
-          processorOptions.metadataCallback || srtpConfig.metadataCallback;
-        if (metadataCallback && typeof metadataCallback === 'function') {
-          metadataCallback(metadata);
-        }
-      }
-
-      // Skip if no text content
-      if (!text) return;
-
-      if (processBackspaces) {
-        // Process backspaces in the T.140 stream
-        const { processedText, updatedBuffer } = processT140BackspaceChars(
-          text,
-          textBuffer
-        );
-        textBuffer = updatedBuffer;
-
-        // Only send if there's something to send
-        if (processedText) {
-          transport.sendText(processedText);
-        }
-      } else {
-        // Send text directly without backspace processing
-        transport.sendText(text);
-      }
-    });
-
-    stream.on('end', () => {
-      // Close the transport when stream ends
-      transport.close();
-    });
-
-    // Handle errors from the input stream
-    stream.on('error', (err) => {
-      transport.close();
-    });
+    attachStreamToSrtpTransport(transport, stream, srtpConfig, processorOptions);
   };
 
   return {
@@ -116,24 +133,19 @@ export function processAIStreamToSrtp(
   remotePort: number = DEFAULT_SRTP_PORT,
   existingTransport?: T140RtpTransport
 ): T140RtpTransport {
+  const processorOptions: ProcessorOptions = {
+    processBackspaces: srtpConfig.processBackspaces,
+    handleMetadata: srtpConfig.handleMetadata,
+    metadataCallback: srtpConfig.metadataCallback,
+  };
+
   // If an existing transport is provided, use it
   if (existingTransport) {
     // Make sure SRTP is set up on the existing transport
     existingTransport.setupSrtp(srtpConfig);
 
-    const processorOptions: ProcessorOptions = {
-      processBackspaces: srtpConfig.processBackspaces,
-      handleMetadata: srtpConfig.handleMetadata,
-      metadataCallback: srtpConfig.metadataCallback,
-    };
-
-    const { attachStream } = createT140SrtpTransport(
-      remoteAddress,
-      srtpConfig,
-      remotePort
-    );
-    attachStream(stream, processorOptions);
-
+    // Attach stream directly to the existing transport
+    attachStreamToSrtpTransport(existingTransport, stream, srtpConfig, processorOptions);
     return existingTransport;
   }
 
@@ -143,13 +155,6 @@ export function processAIStreamToSrtp(
     srtpConfig,
     remotePort
   );
-
-  // Attach the stream to the transport
-  const processorOptions: ProcessorOptions = {
-    processBackspaces: srtpConfig.processBackspaces,
-    handleMetadata: srtpConfig.handleMetadata,
-    metadataCallback: srtpConfig.metadataCallback,
-  };
 
   attachStream(stream, processorOptions);
 

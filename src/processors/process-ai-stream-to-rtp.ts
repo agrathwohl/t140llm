@@ -11,6 +11,96 @@ import {
 import { extractTextFromChunk } from '../utils/extract-text';
 
 /**
+ * Attach a stream to an existing T140 RTP transport with rate limiting
+ *
+ * @param transport The transport to attach the stream to
+ * @param stream The stream to attach
+ * @param rtpConfig RTP configuration options
+ * @param processorOptions Processor options for handling the stream
+ */
+export function attachStreamToRtpTransport(
+  transport: T140RtpTransport,
+  stream: TextDataStream,
+  rtpConfig: RtpConfig = {},
+  processorOptions: ProcessorOptions = {}
+): void {
+  let textBuffer = '';
+  const processBackspaces =
+    processorOptions.processBackspaces || rtpConfig.processBackspaces;
+  const charRateLimit = rtpConfig.charRateLimit || DEFAULT_CHAR_RATE_LIMIT;
+  const charQueue: string[] = [];
+  let lastSendTime = Date.now();
+  let tokenBucket = charRateLimit;
+  const tokenRefillRate = charRateLimit / TOKEN_REFILL_RATE_DIVISOR;
+
+  const sendInterval = setInterval(() => {
+    const now = Date.now();
+    const elapsedMs = now - lastSendTime;
+    lastSendTime = now;
+    tokenBucket = Math.min(
+      charRateLimit,
+      tokenBucket + elapsedMs * tokenRefillRate
+    );
+
+    while (charQueue.length > 0 && tokenBucket >= MIN_TOKEN_BUCKET_VALUE) {
+      const charsToSend = Math.min(Math.floor(tokenBucket), charQueue.length);
+      const textChunk = charQueue.splice(0, charsToSend).join('');
+
+      if (textChunk) {
+        transport.sendText(textChunk);
+        tokenBucket -= textChunk.length;
+      }
+    }
+  }, SEND_INTERVAL_MS);
+
+  stream.on('data', (chunk) => {
+    const { text, metadata } = extractTextFromChunk(chunk);
+
+    if (
+      metadata &&
+      processorOptions.handleMetadata !== false &&
+      rtpConfig.handleMetadata !== false
+    ) {
+      stream.emit('metadata', metadata);
+      const metadataCallback =
+        processorOptions.metadataCallback || rtpConfig.metadataCallback;
+      if (metadataCallback) {
+        metadataCallback(metadata);
+      }
+    }
+
+    if (!text) return;
+
+    if (processBackspaces) {
+      const { processedText, updatedBuffer } = processT140BackspaceChars(
+        text,
+        textBuffer
+      );
+      textBuffer = updatedBuffer;
+
+      if (processedText) {
+        charQueue.push(...processedText);
+      }
+    } else {
+      charQueue.push(...text);
+    }
+  });
+
+  stream.on('end', () => {
+    clearInterval(sendInterval);
+    if (charQueue.length > 0) {
+      transport.sendText(charQueue.join(''));
+    }
+    transport.close();
+  });
+
+  stream.on('error', (err) => {
+    clearInterval(sendInterval);
+    transport.close();
+  });
+}
+
+/**
  * Create a T140 RTP transport that can be used to send T.140 data
  *
  * @param remoteAddress Remote address to send packets to
@@ -35,80 +125,7 @@ export function createT140RtpTransport(
     stream: TextDataStream,
     processorOptions: ProcessorOptions = {}
   ) => {
-    let textBuffer = '';
-    const processBackspaces =
-      processorOptions.processBackspaces || rtpConfig.processBackspaces;
-    const charRateLimit = rtpConfig.charRateLimit || DEFAULT_CHAR_RATE_LIMIT;
-    const charQueue: string[] = [];
-    let lastSendTime = Date.now();
-    let tokenBucket = charRateLimit;
-    const tokenRefillRate = charRateLimit / TOKEN_REFILL_RATE_DIVISOR;
-
-    const sendInterval = setInterval(() => {
-      const now = Date.now();
-      const elapsedMs = now - lastSendTime;
-      lastSendTime = now;
-      tokenBucket = Math.min(
-        charRateLimit,
-        tokenBucket + elapsedMs * tokenRefillRate
-      );
-
-      while (charQueue.length > 0 && tokenBucket >= MIN_TOKEN_BUCKET_VALUE) {
-        const charsToSend = Math.min(Math.floor(tokenBucket), charQueue.length);
-        const textChunk = charQueue.splice(0, charsToSend).join('');
-
-        if (textChunk) {
-          transport.sendText(textChunk);
-          tokenBucket -= textChunk.length;
-        }
-      }
-    }, SEND_INTERVAL_MS);
-
-    stream.on('data', (chunk) => {
-      const { text, metadata } = extractTextFromChunk(chunk);
-
-      if (
-        metadata &&
-        processorOptions.handleMetadata !== false &&
-        rtpConfig.handleMetadata !== false
-      ) {
-        stream.emit('metadata', metadata);
-        const metadataCallback =
-          processorOptions.metadataCallback || rtpConfig.metadataCallback;
-        if (metadataCallback) {
-          metadataCallback(metadata);
-        }
-      }
-
-      if (!text) return;
-
-      if (processBackspaces) {
-        const { processedText, updatedBuffer } = processT140BackspaceChars(
-          text,
-          textBuffer
-        );
-        textBuffer = updatedBuffer;
-
-        if (processedText) {
-          charQueue.push(...processedText);
-        }
-      } else {
-        charQueue.push(...text);
-      }
-    });
-
-    stream.on('end', () => {
-      clearInterval(sendInterval);
-      if (charQueue.length > 0) {
-        transport.sendText(charQueue.join(''));
-      }
-      transport.close();
-    });
-
-    stream.on('error', (err) => {
-      clearInterval(sendInterval);
-      transport.close();
-    });
+    attachStreamToRtpTransport(transport, stream, rtpConfig, processorOptions);
   };
 
   return {
@@ -136,34 +153,24 @@ export function processAIStreamToRtp(
   rtpConfig: RtpConfig = {},
   existingTransport?: T140RtpTransport
 ): T140RtpTransport {
-  if (existingTransport) {
-    const processorOptions: ProcessorOptions = {
-      processBackspaces: rtpConfig.processBackspaces,
-      handleMetadata: rtpConfig.handleMetadata,
-      metadataCallback: rtpConfig.metadataCallback,
-    };
-
-    const { attachStream } = createT140RtpTransport(
-      remoteAddress,
-      remotePort,
-      rtpConfig
-    );
-    attachStream(stream, processorOptions);
-
-    return existingTransport;
-  }
-
-  const { transport, attachStream } = createT140RtpTransport(
-    remoteAddress,
-    remotePort,
-    rtpConfig
-  );
-
   const processorOptions: ProcessorOptions = {
     processBackspaces: rtpConfig.processBackspaces,
     handleMetadata: rtpConfig.handleMetadata,
     metadataCallback: rtpConfig.metadataCallback,
   };
+
+  if (existingTransport) {
+    // Attach stream directly to the existing transport
+    attachStreamToRtpTransport(existingTransport, stream, rtpConfig, processorOptions);
+    return existingTransport;
+  }
+
+  // Create a new transport and attach the stream
+  const { transport, attachStream } = createT140RtpTransport(
+    remoteAddress,
+    remotePort,
+    rtpConfig
+  );
 
   attachStream(stream, processorOptions);
 
