@@ -5,13 +5,13 @@ import {
 } from 'llm-steg';
 import { TransportStream } from '../interfaces';
 import { StegConfig } from './steg-config.interface';
-import { IStegTransport } from './steg-transport.interface';
+import { StegTransportInterface } from './steg-transport.interface';
 
 /**
  * Steganography transport implementation using llm-steg package.
  * Uses LSB algorithm to hide RTP packets within cover media.
  */
-export class StegTransport implements IStegTransport {
+export class StegTransport implements StegTransportInterface {
   private innerTransport: TransportStream;
   private config: StegConfig;
   private engine: StegEngine;

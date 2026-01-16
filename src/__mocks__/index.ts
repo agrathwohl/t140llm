@@ -210,7 +210,10 @@ class T140RtpTransport extends EventEmitter {
 }
 
 // Simulate interval for rate limiting
-function createMockInterval(callback: () => void, _interval: number): ReturnType<typeof setTimeout> {
+function createMockInterval(
+  callback: () => void,
+  _interval: number
+): ReturnType<typeof setTimeout> {
   /* tslint:disable:no-empty */
   const id = setTimeout(() => {}, 0); // Just need an ID
   callback(); // Call immediately for testing

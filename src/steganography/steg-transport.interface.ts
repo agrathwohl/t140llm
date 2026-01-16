@@ -4,7 +4,7 @@ import { StegConfig } from './steg-config.interface';
 /**
  * Interface for a steganography-capable transport
  */
-export interface IStegTransport extends TransportStream {
+export interface StegTransportInterface extends TransportStream {
   /**
    * Apply steganography encoding to the data
    * @param data Original data to be hidden
