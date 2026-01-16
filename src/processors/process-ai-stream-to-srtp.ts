@@ -5,6 +5,43 @@ import { DEFAULT_SRTP_PORT } from '../utils/constants';
 import { extractTextFromChunk } from '../utils/extract-text';
 
 /**
+ * Validates that required SRTP configuration fields are present
+ * Throws an error if masterKey or masterSalt is missing or invalid
+ *
+ * @param srtpConfig The SRTP configuration to validate
+ * @throws Error if required fields are missing or invalid
+ */
+function validateSrtpConfig(srtpConfig: SrtpConfig): void {
+  if (!srtpConfig) {
+    throw new Error('SRTP configuration is required');
+  }
+
+  if (!srtpConfig.masterKey) {
+    throw new Error('SRTP configuration requires masterKey');
+  }
+
+  if (!Buffer.isBuffer(srtpConfig.masterKey)) {
+    throw new Error('SRTP masterKey must be a Buffer');
+  }
+
+  if (srtpConfig.masterKey.length === 0) {
+    throw new Error('SRTP masterKey cannot be empty');
+  }
+
+  if (!srtpConfig.masterSalt) {
+    throw new Error('SRTP configuration requires masterSalt');
+  }
+
+  if (!Buffer.isBuffer(srtpConfig.masterSalt)) {
+    throw new Error('SRTP masterSalt must be a Buffer');
+  }
+
+  if (srtpConfig.masterSalt.length === 0) {
+    throw new Error('SRTP masterSalt cannot be empty');
+  }
+}
+
+/**
  * Attach a stream to an existing T140 SRTP transport
  *
  * @param transport The transport to attach the stream to
@@ -95,6 +132,9 @@ export function createT140SrtpTransport(
     processorOptions?: ProcessorOptions
   ) => void;
 } {
+  // Validate SRTP config before creating transport (fail fast)
+  validateSrtpConfig(srtpConfig);
+
   // Create transport
   const transport = new T140RtpTransport(remoteAddress, remotePort, srtpConfig);
 
@@ -133,6 +173,9 @@ export function processAIStreamToSrtp(
   remotePort: number = DEFAULT_SRTP_PORT,
   existingTransport?: T140RtpTransport
 ): T140RtpTransport {
+  // Validate SRTP config before any operations (fail fast)
+  validateSrtpConfig(srtpConfig);
+
   const processorOptions: ProcessorOptions = {
     processBackspaces: srtpConfig.processBackspaces,
     handleMetadata: srtpConfig.handleMetadata,

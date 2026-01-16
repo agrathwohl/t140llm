@@ -25,7 +25,7 @@ export const SEND_INTERVAL_MS = 100; // milliseconds
 
 // Forward Error Correction (FEC) defaults
 export const DEFAULT_FEC_GROUP_SIZE = 5; // packets per FEC packet
-export const FEC_HEADER_EXTENSION_SIZE = 16; // bytes
+export const FEC_HEADER_EXTENSION_SIZE = 12; // bytes - RFC 5109 FEC header size
 
 // Redundancy (RED) encoding defaults
 export const DEFAULT_REDUNDANCY_LEVEL = 2; // number of redundant blocks

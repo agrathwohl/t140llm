@@ -227,6 +227,37 @@ function createMockInterval(callback: () => void, interval: number): number {
   return id as unknown as number;
 }
 
+// Validate SRTP config (matches real implementation)
+function validateSrtpConfig(srtpConfig: SrtpConfig): void {
+  if (!srtpConfig) {
+    throw new Error('SRTP configuration is required');
+  }
+
+  if (!srtpConfig.masterKey) {
+    throw new Error('SRTP configuration requires masterKey');
+  }
+
+  if (!Buffer.isBuffer(srtpConfig.masterKey)) {
+    throw new Error('SRTP masterKey must be a Buffer');
+  }
+
+  if (srtpConfig.masterKey.length === 0) {
+    throw new Error('SRTP masterKey cannot be empty');
+  }
+
+  if (!srtpConfig.masterSalt) {
+    throw new Error('SRTP configuration requires masterSalt');
+  }
+
+  if (!Buffer.isBuffer(srtpConfig.masterSalt)) {
+    throw new Error('SRTP masterSalt must be a Buffer');
+  }
+
+  if (srtpConfig.masterSalt.length === 0) {
+    throw new Error('SRTP masterSalt cannot be empty');
+  }
+}
+
 // Mock process functions
 const processAIStream = jest.fn().mockImplementation(
   (
@@ -334,6 +365,9 @@ const processAIStreamToSrtp = jest
       remotePort?: number,
       existingTransport?: T140RtpTransport
     ) => {
+      // Validate SRTP config before any operations (fail fast)
+      validateSrtpConfig(srtpConfig);
+
       // If existingTransport provided, use it directly
       if (existingTransport) {
         existingTransport.setupSrtp(srtpConfig);

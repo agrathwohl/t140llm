@@ -82,8 +82,8 @@ export class T140StreamDemultiplexer extends EventEmitter {
       if (useCSRC) {
         // Read the first byte of the RTP header
         const firstByte = data[0];
-        // Extract CSRC count (bottom 4 bits, mask with 15 decimal instead of hex)
-        const csrcCount = firstByte % 16; // Equivalent to & 0x0F but without bitwise
+        // Extract CSRC count (CC field, bottom 4 bits per RFC 3550)
+        const csrcCount = firstByte & 0x0F;
 
         if (csrcCount > 0) {
           // Read the first CSRC as stream identifier
@@ -100,8 +100,11 @@ export class T140StreamDemultiplexer extends EventEmitter {
         }
       } else {
         // Using prefix-based identification
-        // Skip RTP header (12 bytes fixed header size)
-        const payloadWithPrefix = data.slice(12);
+        // Calculate dynamic RTP header size per RFC 3550: 12 bytes + (CSRC count * 4)
+        const firstByte = data[0];
+        const csrcCount = firstByte & 0x0F;
+        const headerSize = 12 + (csrcCount * 4);
+        const payloadWithPrefix = data.slice(headerSize);
         const payloadStr = payloadWithPrefix.toString('utf-8');
 
         // Check for metadata marker

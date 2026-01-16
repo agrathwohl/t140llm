@@ -1,4 +1,22 @@
-import { createSrtpKeysFromPassphrase } from '../src';
+import { createSrtpKeysFromPassphrase, processAIStreamToSrtp } from '../src';
+import { EventEmitter } from 'events';
+
+/**
+ * Mock data stream for testing
+ */
+class MockDataStream extends EventEmitter {
+  emitData(text: string): void {
+    this.emit('data', text);
+  }
+
+  emitEnd(): void {
+    this.emit('end');
+  }
+
+  emitError(error: Error): void {
+    this.emit('error', error);
+  }
+}
 
 describe('SRTP Functionality', () => {
   describe('createSrtpKeysFromPassphrase', () => {
@@ -61,6 +79,112 @@ describe('SRTP Functionality', () => {
       for (let i = 0; i < 14; i++) {
         expect(masterSalt[i]).toBe(passphraseBuffer[i + 16]);
       }
+    });
+  });
+
+  describe('SrtpConfig Validation', () => {
+    let stream: MockDataStream;
+
+    beforeEach(() => {
+      stream = new MockDataStream();
+    });
+
+    test('should throw error when srtpConfig is missing masterKey', () => {
+      const invalidConfig = {
+        masterSalt: Buffer.alloc(14, 0xbb),
+      } as any;
+
+      expect(() => {
+        processAIStreamToSrtp(stream, '127.0.0.1', invalidConfig, 5006);
+      }).toThrow('SRTP configuration requires masterKey');
+    });
+
+    test('should throw error when srtpConfig is missing masterSalt', () => {
+      const invalidConfig = {
+        masterKey: Buffer.alloc(16, 0xaa),
+      } as any;
+
+      expect(() => {
+        processAIStreamToSrtp(stream, '127.0.0.1', invalidConfig, 5006);
+      }).toThrow('SRTP configuration requires masterSalt');
+    });
+
+    test('should throw error when masterKey is not a Buffer', () => {
+      const invalidConfig = {
+        masterKey: 'not-a-buffer',
+        masterSalt: Buffer.alloc(14, 0xbb),
+      } as any;
+
+      expect(() => {
+        processAIStreamToSrtp(stream, '127.0.0.1', invalidConfig, 5006);
+      }).toThrow('SRTP masterKey must be a Buffer');
+    });
+
+    test('should throw error when masterSalt is not a Buffer', () => {
+      const invalidConfig = {
+        masterKey: Buffer.alloc(16, 0xaa),
+        masterSalt: 'not-a-buffer',
+      } as any;
+
+      expect(() => {
+        processAIStreamToSrtp(stream, '127.0.0.1', invalidConfig, 5006);
+      }).toThrow('SRTP masterSalt must be a Buffer');
+    });
+
+    test('should throw error when masterKey is empty Buffer', () => {
+      const invalidConfig = {
+        masterKey: Buffer.alloc(0),
+        masterSalt: Buffer.alloc(14, 0xbb),
+      } as any;
+
+      expect(() => {
+        processAIStreamToSrtp(stream, '127.0.0.1', invalidConfig, 5006);
+      }).toThrow('SRTP masterKey cannot be empty');
+    });
+
+    test('should throw error when masterSalt is empty Buffer', () => {
+      const invalidConfig = {
+        masterKey: Buffer.alloc(16, 0xaa),
+        masterSalt: Buffer.alloc(0),
+      } as any;
+
+      expect(() => {
+        processAIStreamToSrtp(stream, '127.0.0.1', invalidConfig, 5006);
+      }).toThrow('SRTP masterSalt cannot be empty');
+    });
+
+    test('should throw error when srtpConfig is null', () => {
+      expect(() => {
+        processAIStreamToSrtp(stream, '127.0.0.1', null as any, 5006);
+      }).toThrow('SRTP configuration is required');
+    });
+
+    test('should throw error when srtpConfig is undefined', () => {
+      expect(() => {
+        processAIStreamToSrtp(stream, '127.0.0.1', undefined as any, 5006);
+      }).toThrow('SRTP configuration is required');
+    });
+
+    test('should accept valid srtpConfig with proper masterKey and masterSalt', () => {
+      const validConfig = {
+        masterKey: Buffer.alloc(16, 0xaa),
+        masterSalt: Buffer.alloc(14, 0xbb),
+      };
+
+      // Should not throw
+      expect(() => {
+        processAIStreamToSrtp(stream, '127.0.0.1', validConfig, 5006);
+      }).not.toThrow();
+    });
+
+    test('should accept srtpConfig generated from createSrtpKeysFromPassphrase', () => {
+      const { masterKey, masterSalt } = createSrtpKeysFromPassphrase('test-passphrase');
+      const validConfig = { masterKey, masterSalt };
+
+      // Should not throw
+      expect(() => {
+        processAIStreamToSrtp(stream, '127.0.0.1', validConfig, 5006);
+      }).not.toThrow();
     });
   });
 });

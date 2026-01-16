@@ -8,6 +8,7 @@
     "ter-indent": false,
     "object-curly-spacing": false,
     "brace-style": false,
-    "array-bracket-spacing": false
+    "array-bracket-spacing": false,
+    "no-bitwise": false
   }
 }
