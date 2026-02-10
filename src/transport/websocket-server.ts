@@ -3,7 +3,12 @@ import * as https from 'https';
 import * as net from 'net';
 import WebSocket from 'ws';
 import { createRtpPacket } from '../rtp/create-rtp-packet';
-import { RTP_MAX_SEQUENCE_NUMBER, SEQPACKET_SOCKET_PATH, WS_SERVER_PORT } from '../utils/constants';
+import {
+  DEFAULT_TIMESTAMP_INCREMENT,
+  RTP_MAX_SEQUENCE_NUMBER,
+  SEQPACKET_SOCKET_PATH,
+  WS_SERVER_PORT,
+} from '../utils/constants';
 
 /**
  * Interface for WebSocket server configuration options
@@ -77,7 +82,7 @@ export function createWebSocketServer(options: WebSocketServerOptions = {}): Web
 
       // Update sequence number and timestamp (wrap at 16-bit boundary per RTP spec)
       sequenceNumber = (sequenceNumber + 1) % RTP_MAX_SEQUENCE_NUMBER;
-      timestamp += 160; // Assuming 20ms per packet at 8kHz
+      timestamp += DEFAULT_TIMESTAMP_INCREMENT; // 20ms per packet at 8kHz
     });
 
     ws.on('close', () => {

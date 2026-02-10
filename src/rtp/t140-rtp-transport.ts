@@ -18,13 +18,26 @@ import {
   DEFAULT_RTP_PORT,
   DEFAULT_T140_PAYLOAD_TYPE,
   DEFAULT_TIMESTAMP_INCREMENT,
+  FEC_EXT_OFFSET_FLAGS,
+  FEC_EXT_OFFSET_LENGTH,
+  FEC_EXT_OFFSET_MASK,
+  FEC_EXT_OFFSET_MEDIA_PT,
+  FEC_EXT_OFFSET_SN_BASE,
+  FEC_EXT_OFFSET_TIMESTAMP,
   FEC_HEADER_EXTENSION_SIZE,
   RED_F_BIT_FLAG,
   RED_HEADER_SIZE_PER_BLOCK,
   RED_MAX_BLOCK_LENGTH,
+  RED_OFFSET_BLOCK_LENGTH,
+  RED_OFFSET_TIMESTAMP_OFFSET,
   RED_PRIMARY_HEADER_SIZE,
   RTP_HEADER_SIZE,
   RTP_MAX_SEQUENCE_NUMBER,
+  RTP_OFFSET_PAYLOAD_TYPE,
+  RTP_OFFSET_SEQUENCE,
+  RTP_OFFSET_SSRC,
+  RTP_OFFSET_TIMESTAMP,
+  RTP_OFFSET_VERSION,
   RTP_VERSION,
 } from '../utils/constants';
 import { ErrorFactory } from '../utils/error-factory';
@@ -250,12 +263,12 @@ export class T140RtpTransport extends EventEmitter {
     const fecHeader = Buffer.alloc(RTP_HEADER_SIZE);
     fecHeader.writeUInt8(
       version * BIT_SHIFT_64 + padding * BIT_SHIFT_32 + extension * BIT_SHIFT_16 + csrcCount,
-      0
+      RTP_OFFSET_VERSION
     );
-    fecHeader.writeUInt8(marker * BIT_SHIFT_128 + payloadType, 1);
-    fecHeader.writeUInt16BE(fecSeqNum, 2);
-    fecHeader.writeUInt32BE(fecTimestamp, 4);
-    fecHeader.writeUInt32BE(ssrc, 8);
+    fecHeader.writeUInt8(marker * BIT_SHIFT_128 + payloadType, RTP_OFFSET_PAYLOAD_TYPE);
+    fecHeader.writeUInt16BE(fecSeqNum, RTP_OFFSET_SEQUENCE);
+    fecHeader.writeUInt32BE(fecTimestamp, RTP_OFFSET_TIMESTAMP);
+    fecHeader.writeUInt32BE(ssrc, RTP_OFFSET_SSRC);
 
     // FEC Header Extension - RFC 5109 Section 6.1
     const fecHeaderExt = Buffer.alloc(FEC_HEADER_EXTENSION_SIZE);
@@ -266,15 +279,15 @@ export class T140RtpTransport extends EventEmitter {
     // CC bits: CSRC count from the FEC header
     // M bit: RTP marker bit state from the FEC header
     // PT bits: FEC payload type
-    fecHeaderExt.writeUInt8(0, 0); // E, L, P, X, CC, M bits
-    fecHeaderExt.writeUInt8(this.config.payloadType!, 1); // Original media PT
+    fecHeaderExt.writeUInt8(0, FEC_EXT_OFFSET_FLAGS); // E, L, P, X, CC, M bits
+    fecHeaderExt.writeUInt8(this.config.payloadType!, FEC_EXT_OFFSET_MEDIA_PT); // Original media PT
     // SN base: first sequence number this FEC packet protects
-    fecHeaderExt.writeUInt16BE(sequenceNumbers[0], 2);
+    fecHeaderExt.writeUInt16BE(sequenceNumbers[0], FEC_EXT_OFFSET_SN_BASE);
     // Timestamp recovery field: timestamp of the media packet
-    fecHeaderExt.writeUInt32BE(timestamps[0], 4);
+    fecHeaderExt.writeUInt32BE(timestamps[0], FEC_EXT_OFFSET_TIMESTAMP);
     // Length recovery field: length of the media packet
     const packetLength = packets[0].length;
-    fecHeaderExt.writeUInt16BE(packetLength, 8);
+    fecHeaderExt.writeUInt16BE(packetLength, FEC_EXT_OFFSET_LENGTH);
     // Mask: which packets this FEC packet protects (bits)
     // For simplicity, we use a continuous block of packets
     // Each bit represents one packet being protected
@@ -282,7 +295,7 @@ export class T140RtpTransport extends EventEmitter {
     // Set bits for each protected packet
     // For example: 0000 0000 0001 1111 would protect 5 consecutive packets
     mask.writeUInt16BE(Math.pow(2, packets.length) - 1, 0);
-    mask.copy(fecHeaderExt, 10, 0, 2);
+    mask.copy(fecHeaderExt, FEC_EXT_OFFSET_MASK, 0, 2);
 
     // Now create the FEC payload
     // This requires XORing the payloads of all protected packets
@@ -347,12 +360,12 @@ export class T140RtpTransport extends EventEmitter {
     // Create RTP header
     rtpHeader.writeUInt8(
       version * BIT_SHIFT_64 + padding * BIT_SHIFT_32 + extension * BIT_SHIFT_16 + csrcCount,
-      0
+      RTP_OFFSET_VERSION
     );
-    rtpHeader.writeUInt8(marker * BIT_SHIFT_128 + payloadType, 1);
-    rtpHeader.writeUInt16BE(this.seqNum, 2);
-    rtpHeader.writeUInt32BE(this.timestamp, 4);
-    rtpHeader.writeUInt32BE(ssrc, 8);
+    rtpHeader.writeUInt8(marker * BIT_SHIFT_128 + payloadType, RTP_OFFSET_PAYLOAD_TYPE);
+    rtpHeader.writeUInt16BE(this.seqNum, RTP_OFFSET_SEQUENCE);
+    rtpHeader.writeUInt32BE(this.timestamp, RTP_OFFSET_TIMESTAMP);
+    rtpHeader.writeUInt32BE(ssrc, RTP_OFFSET_SSRC);
 
     // Create RED headers and payloads
     // Format for each redundant block:
@@ -374,8 +387,8 @@ export class T140RtpTransport extends EventEmitter {
       const packet = redundantPackets[redundantPackets.length - 1 - i];
 
       // Calculate timestamp offset (primary timestamp - redundant timestamp)
-      // We need to extract the timestamp from the RTP header (bytes 4-7)
-      const redPacketTimestamp = packet.readUInt32BE(4);
+      // We need to extract the timestamp from the RTP header
+      const redPacketTimestamp = packet.readUInt32BE(RTP_OFFSET_TIMESTAMP);
       // 16-bit value using modulo instead of bitwise AND
       const timestampOffset = (this.timestamp - redPacketTimestamp) % RTP_MAX_SEQUENCE_NUMBER;
 
@@ -384,9 +397,18 @@ export class T140RtpTransport extends EventEmitter {
 
       // Write RED header for this block
       // F bit = 1 (more blocks follow)
-      redHeaders.writeUInt8(RED_F_BIT_FLAG + this.config.payloadType!, offset); // F=1 + block PT
-      redHeaders.writeUInt16BE(timestampOffset, offset + 1); // Timestamp offset
-      redHeaders.writeUInt8(payloadLength, offset + 3); // Block length
+      redHeaders.writeUInt8(
+        RED_F_BIT_FLAG + this.config.payloadType!,
+        offset
+      ); // F=1 + block PT
+      redHeaders.writeUInt16BE(
+        timestampOffset,
+        offset + RED_OFFSET_TIMESTAMP_OFFSET
+      ); // Timestamp offset
+      redHeaders.writeUInt8(
+        payloadLength,
+        offset + RED_OFFSET_BLOCK_LENGTH
+      ); // Block length
       offset += RED_HEADER_SIZE_PER_BLOCK;
     }
 

@@ -1,5 +1,10 @@
 import { EventEmitter } from 'events';
 import { LLMMetadata } from '../interfaces';
+import {
+  RTP_CSRC_ENTRY_SIZE,
+  RTP_HEADER_SIZE,
+  RTP_OFFSET_CSRC,
+} from './constants';
 
 /**
  * Interface for demultiplexed stream data
@@ -86,8 +91,8 @@ export class T140StreamDemultiplexer extends EventEmitter {
 
         if (csrcCount > 0) {
           // Read the first CSRC as stream identifier
-          // CSRC identifiers start at byte 12 in the RTP header
-          const csrcId = data.readUInt32BE(12);
+          // CSRC identifiers start at byte 12 in the RTP header per RFC 3550
+          const csrcId = data.readUInt32BE(RTP_OFFSET_CSRC);
           streamId = `csrc:${csrcId}`;
         } else {
           // No CSRC, can't identify stream
@@ -96,10 +101,10 @@ export class T140StreamDemultiplexer extends EventEmitter {
         }
       } else {
         // Using prefix-based identification
-        // Calculate dynamic RTP header size per RFC 3550: 12 bytes + (CSRC count * 4)
+        // Calculate dynamic RTP header size per RFC 3550
         const firstByte = data[0];
         const csrcCount = firstByte & 0x0F;
-        const headerSize = 12 + (csrcCount * 4);
+        const headerSize = RTP_HEADER_SIZE + (csrcCount * RTP_CSRC_ENTRY_SIZE);
         const payloadWithPrefix = data.slice(headerSize);
         const payloadStr = payloadWithPrefix.toString('utf-8');
 

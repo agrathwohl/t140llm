@@ -50,3 +50,34 @@ export const BIT_SHIFT_64 = 64;   // Version field (bits 0-1)
 export const BIT_SHIFT_32 = 32;   // Padding bit
 export const BIT_SHIFT_16 = 16;   // Extension bit
 export const BIT_SHIFT_128 = 128; // Marker bit
+
+// RTP header byte offsets per RFC 3550
+export const RTP_OFFSET_VERSION = 0;      // Byte 0: Version, padding, extension, CSRC count
+export const RTP_OFFSET_PAYLOAD_TYPE = 1; // Byte 1: Marker bit, payload type
+export const RTP_OFFSET_SEQUENCE = 2;     // Bytes 2-3: Sequence number
+export const RTP_OFFSET_TIMESTAMP = 4;    // Bytes 4-7: Timestamp
+export const RTP_OFFSET_SSRC = 8;         // Bytes 8-11: SSRC
+export const RTP_OFFSET_CSRC = 12;        // Bytes 12+: CSRC list (variable)
+
+// FEC Header Extension offsets per RFC 5109
+export const FEC_EXT_OFFSET_FLAGS = 0;           // Byte 0: E, L, P, X, CC, M bits
+export const FEC_EXT_OFFSET_MEDIA_PT = 1;        // Byte 1: Original media payload type
+export const FEC_EXT_OFFSET_SN_BASE = 2;         // Bytes 2-3: Sequence number base
+export const FEC_EXT_OFFSET_TIMESTAMP = 4;       // Bytes 4-7: Timestamp recovery
+export const FEC_EXT_OFFSET_LENGTH = 8;          // Bytes 8-9: Length recovery
+export const FEC_EXT_OFFSET_MASK = 10;           // Bytes 10-11: Protection mask
+
+// RED header block offsets per RFC 2198
+export const RED_OFFSET_BLOCK_HEADER = 0;        // Block header: F bit + payload type
+export const RED_OFFSET_TIMESTAMP_OFFSET = 1;    // Timestamp offset (2 bytes)
+export const RED_OFFSET_BLOCK_LENGTH = 3;        // Block length (1 byte)
+export const RED_BLOCK_HEADER_SIZE = 4;          // Total: 4 bytes per redundant block
+
+// SRTP key derivation sizes per RFC 3711
+export const SRTP_MASTER_KEY_SIZE = 16;          // 128 bits
+export const SRTP_MASTER_SALT_SIZE = 14;         // 112 bits
+export const PBKDF2_TOTAL_DERIVED_SIZE = 30;     // Key + Salt = 30 bytes
+export const PBKDF2_ITERATIONS = 10000;          // PBKDF2 iteration count
+
+// Random seed generation
+export const RANDOM_SEED_SEGMENT_LENGTH = 13;    // Length of each random seed segment

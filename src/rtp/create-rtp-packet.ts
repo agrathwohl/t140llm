@@ -1,5 +1,20 @@
 import { RtpConfig } from '../interfaces';
-import { DEFAULT_T140_PAYLOAD_TYPE, RTP_HEADER_SIZE } from '../utils/constants';
+import {
+  BIT_SHIFT_128,
+  BIT_SHIFT_16,
+  BIT_SHIFT_32,
+  BIT_SHIFT_64,
+  DEFAULT_T140_PAYLOAD_TYPE,
+  RTP_CSRC_ENTRY_SIZE,
+  RTP_HEADER_SIZE,
+  RTP_OFFSET_CSRC,
+  RTP_OFFSET_PAYLOAD_TYPE,
+  RTP_OFFSET_SEQUENCE,
+  RTP_OFFSET_SSRC,
+  RTP_OFFSET_TIMESTAMP,
+  RTP_OFFSET_VERSION,
+  RTP_VERSION,
+} from '../utils/constants';
 import { generateSecureSSRC } from '../utils/security';
 
 /**
@@ -11,7 +26,7 @@ export function createRtpPacket(
   payload: string,
   options: Partial<RtpConfig> & { metadataPacket?: boolean } = {}
 ): Buffer {
-  const version = 2;
+  const version = RTP_VERSION;
   const padding = 0;
   const extension = 0;
 
@@ -38,17 +53,17 @@ export function createRtpPacket(
 
   // Use a different approach to avoid bitwise operations
   rtpHeader.writeUInt8(
-    version * 64 + padding * 32 + extension * 16 + csrcCount,
-    0
+    version * BIT_SHIFT_64 + padding * BIT_SHIFT_32 + extension * BIT_SHIFT_16 + csrcCount,
+    RTP_OFFSET_VERSION
   );
-  rtpHeader.writeUInt8(marker * 128 + payloadType, 1);
-  rtpHeader.writeUInt16BE(sequenceNumber, 2);
-  rtpHeader.writeUInt32BE(timestamp, 4);
-  rtpHeader.writeUInt32BE(ssrc, 8);
+  rtpHeader.writeUInt8(marker * BIT_SHIFT_128 + payloadType, RTP_OFFSET_PAYLOAD_TYPE);
+  rtpHeader.writeUInt16BE(sequenceNumber, RTP_OFFSET_SEQUENCE);
+  rtpHeader.writeUInt32BE(timestamp, RTP_OFFSET_TIMESTAMP);
+  rtpHeader.writeUInt32BE(ssrc, RTP_OFFSET_SSRC);
 
   // Add CSRC identifiers if provided
   for (let i = 0; i < csrcCount; i += 1) {
-    rtpHeader.writeUInt32BE(csrcList[i], 12 + (i * 4));
+    rtpHeader.writeUInt32BE(csrcList[i], RTP_OFFSET_CSRC + (i * RTP_CSRC_ENTRY_SIZE));
   }
 
   // Create payload buffer with optional identifiers

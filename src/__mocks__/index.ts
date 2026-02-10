@@ -6,6 +6,21 @@ const DEFAULT_T140_PAYLOAD_TYPE = 96;
 const DEFAULT_SSRC = 12345;
 const SEQPACKET_SOCKET_PATH = '/tmp/seqpacket_socket';
 const DEFAULT_RTP_PORT = 5004;
+const RTP_MAX_SEQUENCE_NUMBER = 65536; // 16-bit max (2^16)
+const RTP_VERSION = 2;
+
+// Bit shift multipliers for RTP header encoding
+const BIT_SHIFT_64 = 64;   // Version field (bits 0-1)
+const BIT_SHIFT_32 = 32;   // Padding bit
+const BIT_SHIFT_16 = 16;   // Extension bit
+const BIT_SHIFT_128 = 128; // Marker bit
+
+// RTP header byte offsets per RFC 3550
+const RTP_OFFSET_VERSION = 0;      // Byte 0: Version, padding, extension, CSRC count
+const RTP_OFFSET_PAYLOAD_TYPE = 1; // Byte 1: Marker bit, payload type
+const RTP_OFFSET_SEQUENCE = 2;     // Bytes 2-3: Sequence number
+const RTP_OFFSET_TIMESTAMP = 4;    // Bytes 4-7: Timestamp
+const RTP_OFFSET_SSRC = 8;         // Bytes 8-11: SSRC
 
 // Interface for any streaming data source
 interface TextDataStream extends EventEmitter {
@@ -58,7 +73,7 @@ function createRtpPacket(
   payload: string,
   options: Partial<RtpConfig> = {}
 ): Buffer {
-  const version = 2;
+  const version = RTP_VERSION;
   const padding = 0;
   const extension = 0;
   const csrcCount = 0;
@@ -68,13 +83,13 @@ function createRtpPacket(
 
   const rtpHeader = Buffer.alloc(RTP_HEADER_SIZE);
   rtpHeader.writeUInt8(
-    version * 64 + padding * 32 + extension * 16 + csrcCount,
-    0
+    version * BIT_SHIFT_64 + padding * BIT_SHIFT_32 + extension * BIT_SHIFT_16 + csrcCount,
+    RTP_OFFSET_VERSION
   );
-  rtpHeader.writeUInt8(marker * 128 + payloadType, 1);
-  rtpHeader.writeUInt16BE(sequenceNumber, 2);
-  rtpHeader.writeUInt32BE(timestamp, 4);
-  rtpHeader.writeUInt32BE(ssrc, 8);
+  rtpHeader.writeUInt8(marker * BIT_SHIFT_128 + payloadType, RTP_OFFSET_PAYLOAD_TYPE);
+  rtpHeader.writeUInt16BE(sequenceNumber, RTP_OFFSET_SEQUENCE);
+  rtpHeader.writeUInt32BE(timestamp, RTP_OFFSET_TIMESTAMP);
+  rtpHeader.writeUInt32BE(ssrc, RTP_OFFSET_SSRC);
 
   const payloadBuffer = Buffer.from(payload, 'utf-8');
   return Buffer.concat([rtpHeader, payloadBuffer]);
@@ -156,7 +171,7 @@ class T140RtpTransport extends EventEmitter {
     this._sendPacket(packet);
 
     // Update sequence number and timestamp
-    this.seqNum = (this.seqNum + 1) % 65536;
+    this.seqNum = (this.seqNum + 1) % RTP_MAX_SEQUENCE_NUMBER;
     this.timestamp = this.timestamp + this.config.timestampIncrement!;
   });
 

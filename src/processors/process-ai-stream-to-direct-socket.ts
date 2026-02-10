@@ -10,6 +10,7 @@ import { createRtpPacket } from '../rtp/create-rtp-packet';
 import { processT140BackspaceChars } from '../utils/backspace-processing';
 import {
   DEFAULT_T140_PAYLOAD_TYPE,
+  RTP_MAX_SEQUENCE_NUMBER,
   SEQPACKET_SOCKET_PATH,
 } from '../utils/constants';
 import { extractTextFromChunk } from '../utils/extract-text';
@@ -79,7 +80,7 @@ export function createDirectSocketTransport(
 
     sendPacket(metadataPacket);
 
-    rtpState.sequenceNumber = (rtpState.sequenceNumber + 1) % 65536;
+    rtpState.sequenceNumber = (rtpState.sequenceNumber + 1)  % RTP_MAX_SEQUENCE_NUMBER;
     rtpState.timestamp += timestampIncrement;
   };
 
@@ -137,7 +138,7 @@ export function createDirectSocketTransport(
 
       sendPacket(rtpPacket);
 
-      rtpState.sequenceNumber = (rtpState.sequenceNumber + 1) % 65536;
+      rtpState.sequenceNumber = (rtpState.sequenceNumber + 1)  % RTP_MAX_SEQUENCE_NUMBER;
       rtpState.timestamp += timestampIncrement;
     });
 
@@ -230,7 +231,7 @@ export function attachStreamToDirectSocketTransport(
 
     sendPacket(metadataPacket);
 
-    state.sequenceNumber = (state.sequenceNumber + 1) % 65536;
+    state.sequenceNumber = (state.sequenceNumber + 1)  % RTP_MAX_SEQUENCE_NUMBER;
     state.timestamp += timestampIncrement;
   };
 
@@ -284,7 +285,7 @@ export function attachStreamToDirectSocketTransport(
 
     sendPacket(rtpPacket);
 
-    state.sequenceNumber = (state.sequenceNumber + 1) % 65536;
+    state.sequenceNumber = (state.sequenceNumber + 1)  % RTP_MAX_SEQUENCE_NUMBER;
     state.timestamp += timestampIncrement;
   });
 
