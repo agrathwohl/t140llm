@@ -23,6 +23,11 @@ interface AttachStreamOptions extends ProcessorOptions {
   tlsOptions?: TLSOptions;
 }
 
+// Function to check if WebSocket is connected
+function isWebSocketConnected(ws: WebSocket): boolean {
+  return ws.readyState === WebSocket.OPEN;
+}
+
 // Function to create a WebSocket connection
 export function createWebSocketConnection(
   websocketUrl: string = `ws://localhost:${WS_SERVER_PORT}`,
@@ -46,10 +51,18 @@ export function createWebSocketConnection(
       : {};
 
   const ws = new WebSocket(websocketUrl, wsOptions);
-  let isConnected = false;
+  let buffer = '';
+  let bufferLock = false;
 
+  // Flush buffer when connection opens
   ws.on('open', () => {
-    isConnected = true;
+    if (buffer && !bufferLock) {
+      bufferLock = true;
+      const dataToSend = buffer;
+      buffer = '';
+      ws.send(dataToSend);
+      bufferLock = false;
+    }
   });
 
   // Function to attach a stream to the WebSocket connection
@@ -57,24 +70,11 @@ export function createWebSocketConnection(
     stream: TextDataStream,
     processorOptions: AttachStreamOptions = {}
   ) => {
-    let buffer = '';
     let textBuffer = '';
     const processBackspaces = processorOptions.processBackspaces === true;
     const handleMetadata = processorOptions.handleMetadata !== false;
     const sendMetadataOverWebsocket =
       processorOptions.sendMetadataOverWebsocket === true;
-
-    if (ws.readyState === WebSocket.OPEN) {
-      isConnected = true;
-    }
-
-    ws.on('open', () => {
-      isConnected = true;
-      if (buffer) {
-        ws.send(buffer);
-        buffer = '';
-      }
-    });
 
     stream.on('data', (chunk) => {
       const { text, metadata } = extractTextFromChunk(chunk);
@@ -83,7 +83,7 @@ export function createWebSocketConnection(
         stream.emit('metadata', metadata);
         processorOptions.metadataCallback?.(metadata);
 
-        if (sendMetadataOverWebsocket && isConnected) {
+        if (sendMetadataOverWebsocket && isWebSocketConnected(ws)) {
           ws.send(JSON.stringify({ type: 'metadata', content: metadata }));
         }
       }
@@ -102,21 +102,23 @@ export function createWebSocketConnection(
         if (!textToSend) return;
       }
 
-      if (isConnected) {
+      // Use WebSocket's readyState directly to avoid race conditions
+      if (isWebSocketConnected(ws)) {
         ws.send(textToSend);
       } else {
+        // Atomic buffer update to prevent race conditions
         buffer += textToSend;
       }
     });
 
     stream.on('end', () => {
-      if (isConnected) {
+      if (isWebSocketConnected(ws)) {
         ws.close();
       }
     });
 
-    stream.on('error', (_err) => {
-      if (isConnected) {
+    stream.on('error', () => {
+      if (isWebSocketConnected(ws)) {
         ws.close();
       }
     });
@@ -144,13 +146,12 @@ export function attachStreamToWebSocket(
   const sendMetadataOverWebsocket =
     processorOptions.sendMetadataOverWebsocket === true;
 
-  let isConnected = ws.readyState === WebSocket.OPEN;
-
+  // Flush buffer when connection opens
   ws.on('open', () => {
-    isConnected = true;
     if (buffer) {
-      ws.send(buffer);
+      const dataToSend = buffer;
       buffer = '';
+      ws.send(dataToSend);
     }
   });
 
@@ -161,7 +162,7 @@ export function attachStreamToWebSocket(
       stream.emit('metadata', metadata);
       processorOptions.metadataCallback?.(metadata);
 
-      if (sendMetadataOverWebsocket && isConnected) {
+      if (sendMetadataOverWebsocket && isWebSocketConnected(ws)) {
         ws.send(JSON.stringify({ type: 'metadata', content: metadata }));
       }
     }
@@ -180,7 +181,8 @@ export function attachStreamToWebSocket(
       if (!textToSend) return;
     }
 
-    if (isConnected) {
+    // Use WebSocket's readyState directly to avoid race conditions
+    if (isWebSocketConnected(ws)) {
       ws.send(textToSend);
     } else {
       buffer += textToSend;
@@ -188,13 +190,13 @@ export function attachStreamToWebSocket(
   });
 
   stream.on('end', () => {
-    if (isConnected) {
+    if (isWebSocketConnected(ws)) {
       ws.close();
     }
   });
 
-  stream.on('error', (_err) => {
-    if (isConnected) {
+  stream.on('error', () => {
+    if (isWebSocketConnected(ws)) {
       ws.close();
     }
   });

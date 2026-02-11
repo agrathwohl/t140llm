@@ -20,24 +20,40 @@ export function generateSecureSSRC(): number {
   return randomBytes.readUInt32BE(SSRC_BUFFER_OFFSET);
 }
 
+// Size of random salt for PBKDF2 in bytes (minimum 16 bytes recommended)
+const PBKDF2_SALT_SIZE = 32;
+
 /**
  * Helper function to create SRTP key and salt from a passphrase
- * Uses PBKDF2 for secure key derivation
+ * Uses PBKDF2 with random salt for secure key derivation
+ *
+ * SECURITY NOTE: The salt must be stored alongside the encrypted data
+ * and provided during decryption. Without the salt, the key cannot be
+ * reproduced from the passphrase.
  */
-export function createSrtpKeysFromPassphrase(passphrase: string): {
+export function createSrtpKeysFromPassphrase(
+  passphrase: string,
+  providedSalt?: Buffer
+): {
   masterKey: Buffer;
   masterSalt: Buffer;
+  salt: Buffer;
 } {
-  // Use a fixed salt for PBKDF2
-  // This is a constant salt - in a production environment, consider using a per-user salt
-  // that is securely stored and associated with each user
-  const fixedSalt = Buffer.from('T140RtpTransportSaltValue', 'utf8');
+  // Generate a cryptographically secure random salt if not provided
+  // Using a random salt ensures that the same passphrase produces different keys
+  // each time, preventing rainbow table attacks
+  const salt = providedSalt ?? crypto.randomBytes(PBKDF2_SALT_SIZE);
+
+  // Validate salt length
+  if (salt.length < 16) {
+    throw new Error('Salt must be at least 16 bytes for security');
+  }
 
   // Use PBKDF2 to derive key material
   // Total derived size includes both key and salt per RFC 3711
   const derivedKeyMaterial = crypto.pbkdf2Sync(
     passphrase,
-    fixedSalt,
+    salt,
     PBKDF2_ITERATIONS,
     PBKDF2_TOTAL_DERIVED_SIZE,
     'sha256'
@@ -50,5 +66,5 @@ export function createSrtpKeysFromPassphrase(passphrase: string): {
     PBKDF2_TOTAL_DERIVED_SIZE
   );  // 112 bits for master salt
 
-  return { masterKey, masterSalt };
+  return { masterKey, masterSalt, salt };
 }

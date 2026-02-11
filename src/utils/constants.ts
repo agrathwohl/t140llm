@@ -77,7 +77,7 @@ export const RED_BLOCK_HEADER_SIZE = 4;          // Total: 4 bytes per redundant
 export const SRTP_MASTER_KEY_SIZE = 16;          // 128 bits
 export const SRTP_MASTER_SALT_SIZE = 14;         // 112 bits
 export const PBKDF2_TOTAL_DERIVED_SIZE = 30;     // Key + Salt = 30 bytes
-export const PBKDF2_ITERATIONS = 10000;          // PBKDF2 iteration count
+export const PBKDF2_ITERATIONS = 600000;         // OWASP recommended minimum for PBKDF2-HMAC-SHA256 (2023)
 
 // Random seed generation
 export const RANDOM_SEED_SEGMENT_LENGTH = 13;    // Length of each random seed segment
