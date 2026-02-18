@@ -1,6 +1,6 @@
 import * as dgram from 'dgram';
 import { EventEmitter } from 'events';
-import { SrtpContext, SrtpPolicy, SrtpSession } from 'werift-rtp';
+import { SrtpSession, RtpPacket } from 'werift-rtp';
 import {
   RtpConfig,
   SrtpConfig,
@@ -195,20 +195,17 @@ export class T140RtpTransport extends EventEmitter {
         return;
       }
 
-      // Create SRTP policy
-      const policy = new SrtpPolicy();
-      policy.ssrc = this.config.ssrc!;
-      policy.key = srtpConfig.masterKey;
-      policy.salt = srtpConfig.masterSalt;
-
-      // If profile is specified, use it
-      if (srtpConfig.profile) {
-        policy.profile = srtpConfig.profile;
-      }
-
-      // Create SRTP context and session
-      const context = new SrtpContext([policy]);
-      this.srtpSession = new SrtpSession(context, srtpConfig.isSRTCP || false);
+      // Create SRTP session with key material
+      // Profile 1 = SRTP_AES128_CM_HMAC_SHA1_80 (default)
+      this.srtpSession = new SrtpSession({
+        keys: {
+          localMasterKey: srtpConfig.masterKey,
+          localMasterSalt: srtpConfig.masterSalt,
+          remoteMasterKey: srtpConfig.masterKey,
+          remoteMasterSalt: srtpConfig.masterSalt,
+        },
+        profile: srtpConfig.profile ?? 1,
+      });
     } catch (err) {
       this.emit('error', ErrorFactory.ENCRYPTION(
         'Failed to initialize SRTP session',
@@ -498,8 +495,8 @@ export class T140RtpTransport extends EventEmitter {
     let finalPacket: Buffer;
     try {
       if (this.srtpSession) {
-        // Use the typed protect method
-        finalPacket = this.srtpSession.protect(packet);
+        const rtp = RtpPacket.deSerialize(packet);
+        finalPacket = this.srtpSession.encrypt(rtp.payload, rtp.header);
       } else {
         finalPacket = packet;
       }
@@ -547,7 +544,8 @@ export class T140RtpTransport extends EventEmitter {
           let finalFecPacket: Buffer;
           try {
             if (this.srtpSession) {
-              finalFecPacket = this.srtpSession.protect(fecPacket);
+              const fecRtp = RtpPacket.deSerialize(fecPacket);
+              finalFecPacket = this.srtpSession.encrypt(fecRtp.payload, fecRtp.header);
             } else {
               finalFecPacket = fecPacket;
             }
@@ -628,7 +626,8 @@ export class T140RtpTransport extends EventEmitter {
       let finalFecPacket: Buffer;
       try {
         if (this.srtpSession) {
-          finalFecPacket = this.srtpSession.protect(fecPacket);
+          const fecRtp = RtpPacket.deSerialize(fecPacket);
+          finalFecPacket = this.srtpSession.encrypt(fecRtp.payload, fecRtp.header);
         } else {
           finalFecPacket = fecPacket;
         }
