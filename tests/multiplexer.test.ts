@@ -394,7 +394,7 @@ describe('T140StreamDemultiplexer', () => {
       header[0] = 0x80; // Version 2, no CSRC
       
       // Create payload with prefix
-      const payload = Buffer.from('stream1:hello world', 'utf-8');
+      const payload = Buffer.from('stream1\x1Ehello world', 'utf-8');
       const packet = Buffer.concat([header, payload]);
       
       // Process the packet

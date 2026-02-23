@@ -137,7 +137,7 @@ describe('T140RtpTransport with multiplexing', () => {
       // Check the packet payload
       const packet = mockSocket.sent[0].buffer;
       const payload = packet.slice(12).toString('utf-8');
-      expect(payload).toBe('override-stream:hello');
+      expect(payload).toBe('override-stream\x1Ehello');
     });
     
     it('should work with custom transport and multiplexing', () => {

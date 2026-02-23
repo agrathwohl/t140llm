@@ -3,3 +3,4 @@ export * from './backspace-processing';
 export * from './security';
 export * from './constants';
 export * from './demultiplex-streams';
+export * from './stream-processor';

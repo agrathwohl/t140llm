@@ -5,7 +5,7 @@ import { EventEmitter } from 'events';
  */
 export interface LLMMetadata {
   type: 'tool_call' | 'tool_result' | 'custom' | 'reasoning' | string;
-  content: any;
+  content: unknown;
   id?: string;
 }
 
@@ -27,5 +27,6 @@ export interface ProcessorOptions {
   handleMetadata?: boolean;
   metadataCallback?: (metadata: LLMMetadata) => void;
   sendMetadataOverTransport?: boolean;
+  onError?: (error: Error) => void;
   preCreateConnection?: boolean;
 }

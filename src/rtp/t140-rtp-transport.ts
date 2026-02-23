@@ -129,9 +129,8 @@ export class T140RtpTransport extends EventEmitter {
       if (
         !/^(\d{1,3}\.){3}\d{1,3}$/.test(remoteAddress) &&
         remoteAddress !== 'localhost' &&
-        !/^[a-zA-Z0-9][a-zA-Z0-9-]{1,61}[a-zA-Z0-9](?:\.[a-zA-Z]{2,})+$/.test(
-          remoteAddress
-        )
+        !/^\[?[0-9a-fA-F:]+\]?$/.test(remoteAddress) &&
+        !/^[a-zA-Z0-9][a-zA-Z0-9.-]*[a-zA-Z0-9]$/.test(remoteAddress)
       ) {
         throw new Error('Invalid remote address format');
       }
@@ -148,19 +147,19 @@ export class T140RtpTransport extends EventEmitter {
     const secureSSRC = generateSecureSSRC();
 
     this.config = {
-      payloadType: config.payloadType || DEFAULT_T140_PAYLOAD_TYPE,
+      payloadType: config.payloadType ?? DEFAULT_T140_PAYLOAD_TYPE,
       // Use provided SSRC (if any), otherwise use secure random SSRC
-      ssrc: config.ssrc || secureSSRC,
-      initialSequenceNumber: config.initialSequenceNumber || 0,
-      initialTimestamp: config.initialTimestamp || 0,
-      timestampIncrement: config.timestampIncrement || DEFAULT_TIMESTAMP_INCREMENT,
-      fecEnabled: config.fecEnabled || false,
-      fecPayloadType: config.fecPayloadType || DEFAULT_FEC_PAYLOAD_TYPE,
-      fecGroupSize: config.fecGroupSize || DEFAULT_FEC_GROUP_SIZE,
-      charRateLimit: config.charRateLimit || 0, // 0 means no rate limit
-      redEnabled: config.redEnabled || false, // Redundancy disabled by default
-      redPayloadType: config.redPayloadType || DEFAULT_RED_PAYLOAD_TYPE,
-      redundancyLevel: config.redundancyLevel || DEFAULT_REDUNDANCY_LEVEL,
+      ssrc: config.ssrc ?? secureSSRC,
+      initialSequenceNumber: config.initialSequenceNumber ?? 0,
+      initialTimestamp: config.initialTimestamp ?? 0,
+      timestampIncrement: config.timestampIncrement ?? DEFAULT_TIMESTAMP_INCREMENT,
+      fecEnabled: config.fecEnabled ?? false,
+      fecPayloadType: config.fecPayloadType ?? DEFAULT_FEC_PAYLOAD_TYPE,
+      fecGroupSize: config.fecGroupSize ?? DEFAULT_FEC_GROUP_SIZE,
+      charRateLimit: config.charRateLimit ?? 0, // 0 means no rate limit
+      redEnabled: config.redEnabled ?? false, // Redundancy disabled by default
+      redPayloadType: config.redPayloadType ?? DEFAULT_RED_PAYLOAD_TYPE,
+      redundancyLevel: config.redundancyLevel ?? DEFAULT_REDUNDANCY_LEVEL,
       customTransport: config.customTransport,
     };
 
@@ -280,18 +279,22 @@ export class T140RtpTransport extends EventEmitter {
     fecHeaderExt.writeUInt8(this.config.payloadType!, FEC_EXT_OFFSET_MEDIA_PT); // Original media PT
     // SN base: first sequence number this FEC packet protects
     fecHeaderExt.writeUInt16BE(sequenceNumbers[0], FEC_EXT_OFFSET_SN_BASE);
-    // Timestamp recovery field: timestamp of the media packet
-    fecHeaderExt.writeUInt32BE(timestamps[0], FEC_EXT_OFFSET_TIMESTAMP);
-    // Length recovery field: length of the media packet
-    const packetLength = packets[0].length;
-    fecHeaderExt.writeUInt16BE(packetLength, FEC_EXT_OFFSET_LENGTH);
+    // Timestamp recovery field: XOR of all protected packets' timestamps (RFC 5109)
+    let tsRecovery = 0;
+    let lenRecovery = 0;
+    for (let i = 0; i < packets.length; i++) {
+      tsRecovery ^= timestamps[i];
+      lenRecovery ^= (packets[i].length - RTP_HEADER_SIZE);
+    }
+    fecHeaderExt.writeUInt32BE(tsRecovery >>> 0, FEC_EXT_OFFSET_TIMESTAMP);
+    // Length recovery field: XOR of all protected packets' payload lengths
+    fecHeaderExt.writeUInt16BE(lenRecovery & 0xFFFF, FEC_EXT_OFFSET_LENGTH);
     // Mask: which packets this FEC packet protects (bits)
     // For simplicity, we use a continuous block of packets
     // Each bit represents one packet being protected
     const mask = Buffer.alloc(2);
-    // Set bits for each protected packet
-    // For example: 0000 0000 0001 1111 would protect 5 consecutive packets
-    mask.writeUInt16BE(Math.pow(2, packets.length) - 1, 0);
+    // Set bits for each protected packet using bitwise shift (correct for groups <= 16)
+    mask.writeUInt16BE(((1 << packets.length) - 1) & 0xFFFF, 0);
     mask.copy(fecHeaderExt, FEC_EXT_OFFSET_MASK, 0, 2);
 
     // Now create the FEC payload
@@ -518,13 +521,10 @@ export class T140RtpTransport extends EventEmitter {
 
     // If FEC is enabled, add this packet to the buffer for FEC calculation
     if (this.config.fecEnabled) {
-      // Store original packet for FEC (non-RED packet for simplicity)
-      const rtpPacket = createRtpPacket(this.seqNum, this.timestamp, text, {
-        payloadType: this.config.payloadType,
-        ssrc: this.config.ssrc,
-      });
-
-      this.packetBuffer.push(Buffer.from(rtpPacket)); // Make a copy of the packet
+      // Reuse the packet already created above instead of creating a duplicate
+      // In the RED branch, normalPacket was created; in the non-RED branch, rtpPacket was.
+      // We use the pre-encryption `packet` variable which is the correct RTP packet.
+      this.packetBuffer.push(Buffer.from(packet)); // Make a copy of the packet
       this.packetSequenceNumbers.push(this.seqNum);
       this.packetTimestamps.push(this.timestamp);
       this.fecCounter += 1;
@@ -577,7 +577,7 @@ export class T140RtpTransport extends EventEmitter {
     // Update sequence number and timestamp for next packet
     // Use modulo to keep within 16-bit range
     this.seqNum = (this.seqNum + 1) % RTP_MAX_SEQUENCE_NUMBER;
-    this.timestamp = this.timestamp + this.config.timestampIncrement!;
+    this.timestamp = (this.timestamp + this.config.timestampIncrement!) >>> 0;
   }
 
   /**

@@ -1,10 +1,13 @@
 import * as dgram from 'dgram';
+import createDebug from 'debug';
+import { processAIStreamToRtp } from '../processors/process-ai-stream-to-rtp';
 import { RtpConfig, TransportStream } from '../interfaces';
 import { T140RtpTransport } from '../rtp/t140-rtp-transport';
 import { DEFAULT_RTP_PORT } from '../utils/constants';
 import { RtpConfigWithSteg } from './rtp-config-extensions';
 import { StegTransport } from './steg-transport';
 
+const debug = createDebug('t140llm:steg');
 /**
  * Creates a default UDP transport
  */
@@ -13,6 +16,11 @@ function createDefaultTransport(
   remotePort: number = DEFAULT_RTP_PORT
 ): TransportStream {
   const udpSocket = dgram.createSocket('udp4');
+
+  // Prevent unhandled 'error' event from crashing the process
+  udpSocket.on('error', (err) => {
+    debug('UDP transport socket error: %O', err);
+  });
 
   return {
     send(data: Buffer, callback?: (error?: Error) => void): void {
@@ -81,9 +89,6 @@ export function processAIStreamToStegRtp(
   remotePort: number = DEFAULT_RTP_PORT,
   config: RtpConfigWithSteg = {}
 ): T140RtpTransport {
-  // Import processAIStreamToRtp dynamically to avoid circular dependencies
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { processAIStreamToRtp } = require('../processors/process-ai-stream-to-rtp');
 
   // Create the steganography transport
   const transport = createStegT140RtpTransport(
@@ -92,11 +97,11 @@ export function processAIStreamToStegRtp(
     config
   );
 
-  // Process the stream and return the transport
+  // Process the stream using the pre-created steganography transport
   processAIStreamToRtp(stream, remoteAddress, remotePort, {
     ...config,
     customTransport: transport,
-  });
+  }, transport);
 
   return transport;
 }

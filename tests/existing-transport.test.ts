@@ -196,13 +196,7 @@ describe('existingTransport Parameter Fix', () => {
     });
 
     test('should return the exact same transport instance when existingTransport is provided', () => {
-      const returnedTransport = processAIStreamToSrtp(
-        stream,
-        '127.0.0.1',
-        srtpConfig,
-        5006,
-        existingTransport
-      );
+      const returnedTransport = processAIStreamToSrtp(stream, '127.0.0.1', 5006, srtpConfig, existingTransport);
 
       // The returned transport should be the exact same object
       expect(returnedTransport).toBe(existingTransport);
@@ -211,13 +205,7 @@ describe('existingTransport Parameter Fix', () => {
     test('should send data through the existingTransport, not a new transport', () => {
       const sendTextSpy = jest.spyOn(existingTransport, 'sendText');
 
-      processAIStreamToSrtp(
-        stream,
-        '127.0.0.1',
-        srtpConfig,
-        5006,
-        existingTransport
-      );
+      processAIStreamToSrtp(stream, '127.0.0.1', 5006, srtpConfig, existingTransport);
 
       // Emit some data
       stream.emitData('SRTP Test Data');
@@ -231,13 +219,7 @@ describe('existingTransport Parameter Fix', () => {
     test('should close the existingTransport when stream ends', () => {
       const closeSpy = jest.spyOn(existingTransport, 'close');
 
-      processAIStreamToSrtp(
-        stream,
-        '127.0.0.1',
-        srtpConfig,
-        5006,
-        existingTransport
-      );
+      processAIStreamToSrtp(stream, '127.0.0.1', 5006, srtpConfig, existingTransport);
 
       expect(customTransport.closed).toBe(false);
       stream.emitEnd();
@@ -251,13 +233,7 @@ describe('existingTransport Parameter Fix', () => {
     test('should close the existingTransport when stream errors', () => {
       const closeSpy = jest.spyOn(existingTransport, 'close');
 
-      processAIStreamToSrtp(
-        stream,
-        '127.0.0.1',
-        srtpConfig,
-        5006,
-        existingTransport
-      );
+      processAIStreamToSrtp(stream, '127.0.0.1', 5006, srtpConfig, existingTransport);
 
       expect(customTransport.closed).toBe(false);
       stream.emitError(new Error('SRTP test error'));
@@ -271,13 +247,7 @@ describe('existingTransport Parameter Fix', () => {
     test('should call setupSrtp on the existingTransport', () => {
       const setupSrtpSpy = jest.spyOn(existingTransport, 'setupSrtp');
 
-      processAIStreamToSrtp(
-        stream,
-        '127.0.0.1',
-        srtpConfig,
-        5006,
-        existingTransport
-      );
+      processAIStreamToSrtp(stream, '127.0.0.1', 5006, srtpConfig, existingTransport);
 
       // setupSrtp should have been called with the config
       expect(setupSrtpSpy).toHaveBeenCalledWith(srtpConfig);
@@ -505,12 +475,7 @@ describe('existingTransport Parameter Fix', () => {
         customTransport,
       };
 
-      const transport = processAIStreamToSrtp(
-        stream,
-        '127.0.0.1',
-        srtpConfig,
-        5006
-      );
+      const transport = processAIStreamToSrtp(stream, '127.0.0.1', 5006, srtpConfig);
 
       // Should return a T140RtpTransport
       expect(transport).toBeInstanceOf(T140RtpTransport);

@@ -14,6 +14,7 @@ import {
   RTP_OFFSET_TIMESTAMP,
   RTP_OFFSET_VERSION,
   RTP_VERSION,
+  MULTIPLEX_STREAM_DELIMITER,
 } from '../utils/constants';
 import { generateSecureSSRC } from '../utils/security';
 
@@ -73,7 +74,7 @@ export function createRtpPacket(
     payloadBuffer = Buffer.from(`MD:${payload}`, 'utf-8');
   } else if (options.multiplexEnabled && options.streamIdentifier && !options.useCsrcForStreamId) {
     // Add stream identifier as a prefix for multiplexed streams when not using CSRC
-    payloadBuffer = Buffer.from(`${options.streamIdentifier}:${payload}`, 'utf-8');
+    payloadBuffer = Buffer.from(`${options.streamIdentifier}${MULTIPLEX_STREAM_DELIMITER}${payload}`, 'utf-8');
   } else {
     payloadBuffer = Buffer.from(payload, 'utf-8');
   }

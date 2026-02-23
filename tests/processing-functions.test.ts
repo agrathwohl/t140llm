@@ -55,7 +55,7 @@ describe('Processing Functions', () => {
       };
       
       // Verify it can be called with the expected parameters
-      const transport = processAIStreamToSrtp(mockStream as any, '127.0.0.1', srtpConfig, 5006);
+      const transport = processAIStreamToSrtp(mockStream as any, '127.0.0.1', 5006, srtpConfig);
       
       // Verify we got a transport object back
       expect(transport).toBeDefined();

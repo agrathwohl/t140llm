@@ -42,6 +42,10 @@ export const MIN_TOKENS_PER_STREAM = 1;
 // Multiplexing constants
 export const INITIAL_CSRC_ID = 1;
 
+
+// Metadata and multiplexing payload limits
+export const MAX_METADATA_PAYLOAD_SIZE = 1200; // Safe for UDP without fragmentation
+export const MULTIPLEX_STREAM_DELIMITER = '\x1E'; // ASCII Record Separator - avoids colon ambiguity
 // T.140 constants
 export const BACKSPACE = '\u0008'; // ASCII backspace character (BS)
 

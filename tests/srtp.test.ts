@@ -95,7 +95,7 @@ describe('SRTP Functionality', () => {
       } as any;
 
       expect(() => {
-        processAIStreamToSrtp(stream, '127.0.0.1', invalidConfig, 5006);
+        processAIStreamToSrtp(stream, '127.0.0.1', 5006, invalidConfig);
       }).toThrow('SRTP configuration requires masterKey');
     });
 
@@ -105,7 +105,7 @@ describe('SRTP Functionality', () => {
       } as any;
 
       expect(() => {
-        processAIStreamToSrtp(stream, '127.0.0.1', invalidConfig, 5006);
+        processAIStreamToSrtp(stream, '127.0.0.1', 5006, invalidConfig);
       }).toThrow('SRTP configuration requires masterSalt');
     });
 
@@ -116,7 +116,7 @@ describe('SRTP Functionality', () => {
       } as any;
 
       expect(() => {
-        processAIStreamToSrtp(stream, '127.0.0.1', invalidConfig, 5006);
+        processAIStreamToSrtp(stream, '127.0.0.1', 5006, invalidConfig);
       }).toThrow('SRTP masterKey must be a Buffer');
     });
 
@@ -127,7 +127,7 @@ describe('SRTP Functionality', () => {
       } as any;
 
       expect(() => {
-        processAIStreamToSrtp(stream, '127.0.0.1', invalidConfig, 5006);
+        processAIStreamToSrtp(stream, '127.0.0.1', 5006, invalidConfig);
       }).toThrow('SRTP masterSalt must be a Buffer');
     });
 
@@ -138,7 +138,7 @@ describe('SRTP Functionality', () => {
       } as any;
 
       expect(() => {
-        processAIStreamToSrtp(stream, '127.0.0.1', invalidConfig, 5006);
+        processAIStreamToSrtp(stream, '127.0.0.1', 5006, invalidConfig);
       }).toThrow('SRTP masterKey cannot be empty');
     });
 
@@ -149,19 +149,19 @@ describe('SRTP Functionality', () => {
       } as any;
 
       expect(() => {
-        processAIStreamToSrtp(stream, '127.0.0.1', invalidConfig, 5006);
+        processAIStreamToSrtp(stream, '127.0.0.1', 5006, invalidConfig);
       }).toThrow('SRTP masterSalt cannot be empty');
     });
 
     test('should throw error when srtpConfig is null', () => {
       expect(() => {
-        processAIStreamToSrtp(stream, '127.0.0.1', null as any, 5006);
+        processAIStreamToSrtp(stream, '127.0.0.1', 5006, null as any);
       }).toThrow('SRTP configuration is required');
     });
 
     test('should throw error when srtpConfig is undefined', () => {
       expect(() => {
-        processAIStreamToSrtp(stream, '127.0.0.1', undefined as any, 5006);
+        processAIStreamToSrtp(stream, '127.0.0.1', 5006, undefined as any);
       }).toThrow('SRTP configuration is required');
     });
 
@@ -173,7 +173,7 @@ describe('SRTP Functionality', () => {
 
       // Should not throw
       expect(() => {
-        processAIStreamToSrtp(stream, '127.0.0.1', validConfig, 5006);
+        processAIStreamToSrtp(stream, '127.0.0.1', 5006, validConfig);
       }).not.toThrow();
     });
 
@@ -183,7 +183,7 @@ describe('SRTP Functionality', () => {
 
       // Should not throw
       expect(() => {
-        processAIStreamToSrtp(stream, '127.0.0.1', validConfig, 5006);
+        processAIStreamToSrtp(stream, '127.0.0.1', 5006, validConfig);
       }).not.toThrow();
     });
   });

@@ -56,7 +56,7 @@ describe('createRtpPacket with multiplexing support', () => {
     
     // Verify payload contains stream identifier prefix
     const payload = packet.slice(12).toString('utf-8');
-    expect(payload).toBe('test-stream:hello world');
+    expect(payload).toBe('test-stream\x1Ehello world');
   });
   
   it('should create a metadata packet with marker bit set', () => {

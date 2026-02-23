@@ -47,5 +47,5 @@ export interface StegConfig {
    * Custom LLM provider for algorithm generation
    * If not provided, will attempt to use OpenAI
    */
-  llmProvider?: any;
+  llmProvider?: unknown;
 }

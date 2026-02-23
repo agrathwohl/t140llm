@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
 import { LLMMetadata } from '../interfaces';
 import {
+  MULTIPLEX_STREAM_DELIMITER,
   RTP_CSRC_ENTRY_SIZE,
   RTP_HEADER_SIZE,
   RTP_OFFSET_CSRC,
@@ -77,12 +78,7 @@ export class T140StreamDemultiplexer extends EventEmitter {
    */
   processPacket(data: Buffer, useCSRC: boolean = false): void {
     try {
-      // Skip RTP header processing for this example
-      // In a real implementation, you would parse the RTP header properly
-
       let streamId: string | undefined;
-
-      // Extract CSRC fields if using them for stream identification
       if (useCSRC) {
         // Read the first byte of the RTP header
         const firstByte = data[0];
@@ -94,6 +90,11 @@ export class T140StreamDemultiplexer extends EventEmitter {
           // CSRC identifiers start at byte 12 in the RTP header per RFC 3550
           const csrcId = data.readUInt32BE(RTP_OFFSET_CSRC);
           streamId = `csrc:${csrcId}`;
+          const headerSize = RTP_HEADER_SIZE + (csrcCount * RTP_CSRC_ENTRY_SIZE);
+          const payload = data.slice(headerSize);
+          const textContent = payload.toString('utf-8');
+          this._processText(streamId, textContent);
+          return;
         } else {
           // No CSRC, can't identify stream
           this.emit('error', new Error('No CSRC identifiers found in packet'));
@@ -107,16 +108,12 @@ export class T140StreamDemultiplexer extends EventEmitter {
         const headerSize = RTP_HEADER_SIZE + (csrcCount * RTP_CSRC_ENTRY_SIZE);
         const payloadWithPrefix = data.slice(headerSize);
         const payloadStr = payloadWithPrefix.toString('utf-8');
-
-        // Check for metadata marker
         if (payloadStr.startsWith('MD:')) {
           // This is a metadata packet
           const metadataContent = payloadStr.substring(3);
-
           try {
             // Attempt to parse as JSON
             const metadata = JSON.parse(metadataContent);
-
             if (metadata.streamId) {
               this._processMetadata(metadata.streamId, metadata);
             } else {
@@ -128,14 +125,11 @@ export class T140StreamDemultiplexer extends EventEmitter {
 
           return;
         }
-
-        // Check for stream identifier prefix (format: "streamId:payload")
-        const colonIndex = payloadStr.indexOf(':');
-        if (colonIndex > 0) {
-          streamId = payloadStr.substring(0, colonIndex);
-          const textContent = payloadStr.substring(colonIndex + 1);
-
-          // Get or create the stream
+        // Check for stream identifier prefix (format: "streamId\x1Epayload")
+        const delimiterIndex = payloadStr.indexOf(MULTIPLEX_STREAM_DELIMITER);
+        if (delimiterIndex > 0) {
+          streamId = payloadStr.substring(0, delimiterIndex);
+          const textContent = payloadStr.substring(delimiterIndex + 1);
           this._processText(streamId, textContent);
         } else {
           // No identifier found, treat as default stream
@@ -147,7 +141,6 @@ export class T140StreamDemultiplexer extends EventEmitter {
       this.emit('error', new Error(`Error processing packet: ${err}`));
     }
   }
-
   /**
    * Get a stream by ID, creating it if it doesn't exist
    */

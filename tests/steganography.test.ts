@@ -13,7 +13,8 @@ jest.mock('dgram', () => {
         send: jest.fn((data, offset, length, port, address, callback) => {
           if (callback) callback();
         }),
-        close: jest.fn()
+        close: jest.fn(),
+        on: jest.fn()
       };
     })
   };
@@ -97,32 +98,18 @@ describe('Steganography Tests', () => {
       expect(stegTransport.getConfig().encodeMode).toBe('fixed');
     });
 
-    it('should handle encoding errors gracefully', () => {
-      // Silence console.error for this test
-      const originalConsoleError = console.error;
-      console.error = jest.fn();
-
+    it('should throw when encoding fails instead of sending raw data', () => {
       // Create a cover media that's too small for the data
       const tinyMedia = [Buffer.alloc(200)];
-      
-      const stegTransport = new StegTransport(mockTransport, { 
+      const stegTransport = new StegTransport(mockTransport, {
         enabled: true,
         encodeMode: 'fixed',
         coverMedia: tinyMedia
       });
-      
       // Create data large enough to exceed the capacity
       const data = Buffer.alloc(1000, 'X');
-      stegTransport.send(data, () => {});
-      
-      // Should still send the original data when encoding fails
-      expect(mockTransport.send).toHaveBeenCalledWith(data, expect.any(Function));
-      
-      // Verify that the error was logged
-      expect(console.error).toHaveBeenCalled();
-      
-      // Restore console.error
-      console.error = originalConsoleError;
+      expect(() => stegTransport.send(data, () => {})).toThrow('Cover media too small');
+      expect(mockTransport.send).not.toHaveBeenCalled();
     });
 
     it('should work with algorithm config option (uses LSB internally)', () => {

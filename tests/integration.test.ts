@@ -56,7 +56,7 @@ describe('Integration Tests', () => {
     // SRTP mode
     const { masterKey, masterSalt } = createSrtpKeysFromPassphrase('test-key');
     const srtpConfig = { masterKey, masterSalt };
-    const srtpTransport = processAIStreamToSrtp(mockAIStream as any, '127.0.0.1', srtpConfig);
+    const srtpTransport = processAIStreamToSrtp(mockAIStream as any, '127.0.0.1', 5006, srtpConfig);
     expect(processAIStreamToSrtp).toHaveBeenCalled();
     expect(srtpTransport).toBeDefined();
     

@@ -10,7 +10,7 @@ export * from './transport';
 // For backward compatibility
 import { T140RtpError, T140RtpErrorType } from './interfaces/t140-rtp-error.interface';
 import {
-  createWebSocketConnection,
+  createT140WebSocketTransport,
   processAIStream
 } from './processors/process-ai-stream';
 import {
@@ -35,8 +35,7 @@ import { BACKSPACE, SEQPACKET_SOCKET_PATH } from './utils/constants';
 import { extractTextFromChunk } from './utils/extract-text';
 import { createSrtpKeysFromPassphrase, generateSecureSSRC } from './utils/security';
 
-// Create WebSocket server (non-secure by default)
-const wss = createWebSocketServer();
+// WebSocket server removed — consumers should call createWebSocketServer() explicitly
 
 // Import new multiplexer components for direct export
 import {
@@ -52,7 +51,6 @@ import {
 } from './utils/demultiplex-streams';
 
 export {
-  wss,
   createRtpPacket,
   createWebSocketServer,
   WebSocketServerOptions,
@@ -76,7 +74,7 @@ export {
   // Steganography removed - optional module, import from 't140llm/steganography' if needed
 
   // Pre-create transport functions
-  createWebSocketConnection,
+  createT140WebSocketTransport,
   createT140RtpTransport,
   createT140SrtpTransport,
   createDirectSocketTransport,

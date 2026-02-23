@@ -369,8 +369,8 @@ const processAIStreamToSrtp = jest
     (
       stream: TextDataStream,
       remoteAddress: string,
+      remotePort: number | undefined,
       srtpConfig: SrtpConfig,
-      remotePort?: number,
       existingTransport?: T140RtpTransport
     ) => {
       // Validate SRTP config before any operations (fail fast)
