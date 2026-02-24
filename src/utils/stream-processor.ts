@@ -58,6 +58,13 @@ export function resolveStreamOptions(
   };
 }
 
+
+/**
+ * Type guard to detect AsyncIterable streams (modern LLM SDK streams).
+ */
+function isAsyncIterable(stream: TextDataStream): stream is AsyncIterable<unknown> {
+  return stream != null && typeof (stream as any)[Symbol.asyncIterator] === 'function';
+}
 /**
  * Attach a stream to a transport via the shared processing pipeline.
  * Handles text extraction, metadata handling, backspace processing,
@@ -73,7 +80,61 @@ export function attachStreamProcessor(
   callbacks: StreamProcessorCallbacks
 ): void {
   let textBuffer = '';
+  if (isAsyncIterable(stream)) {
+    // Async iterable path (modern LLM SDK streams)
+    (async () => {
+      try {
+        for await (const chunk of stream) {
+          const { text, metadata } = extractTextFromChunk(chunk);
 
+          if (options.handleMetadata && metadata) {
+            try {
+              options.metadataCallback?.(metadata);
+            } catch (_cbErr) {
+              // Prevent callback exceptions from crashing the stream pipeline
+            }
+
+            if (options.sendMetadataOverTransport && callbacks.sendMetadata) {
+              callbacks.sendMetadata(metadata);
+            }
+          }
+
+          if (!text) continue;
+
+          let textToSend = text;
+
+          if (options.processBackspaces) {
+            const { processedText, updatedBuffer } = processT140BackspaceChars(
+              text,
+              textBuffer
+            );
+            textBuffer = updatedBuffer;
+            textToSend = processedText;
+            if (!textToSend) continue;
+          }
+
+          callbacks.sendText(textToSend);
+        }
+        // Stream exhausted — equivalent to 'end' event
+        if (textBuffer) {
+          callbacks.sendText(textBuffer);
+        }
+        callbacks.onStreamEnd?.();
+        callbacks.close();
+      } catch (err) {
+        // Equivalent to 'error' event
+        options.onError?.(err instanceof Error ? err : new Error(String(err)));
+        callbacks.close();
+      }
+    })().catch((err) => {
+      // Defensive catch for unhandled promise rejections
+      options.onError?.(err instanceof Error ? err : new Error(String(err)));
+      callbacks.close();
+    });
+    return;
+  }
+
+  // EventEmitter path (existing behavior — unchanged)
   stream.on('data', (chunk: unknown) => {
     const { text, metadata } = extractTextFromChunk(chunk);
 
@@ -106,7 +167,6 @@ export function attachStreamProcessor(
 
     callbacks.sendText(textToSend);
   });
-
   stream.on('end', () => {
     if (textBuffer) {
       callbacks.sendText(textBuffer);
@@ -114,7 +174,6 @@ export function attachStreamProcessor(
     callbacks.onStreamEnd?.();
     callbacks.close();
   });
-
   stream.on('error', (err: Error) => {
     options.onError?.(err);
     callbacks.close();

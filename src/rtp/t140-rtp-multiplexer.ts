@@ -19,6 +19,13 @@ import { ErrorFactory } from '../utils/error-factory';
 import { extractTextFromChunk } from '../utils/extract-text';
 import { T140RtpTransport } from './t140-rtp-transport';
 
+
+/**
+ * Type guard to detect AsyncIterable streams (modern LLM SDK streams).
+ */
+function isAsyncIterable(stream: TextDataStream): stream is AsyncIterable<unknown> {
+  return stream != null && typeof (stream as any)[Symbol.asyncIterator] === 'function';
+}
 interface StreamInfo {
   id: string;
   stream: TextDataStream;
@@ -221,7 +228,9 @@ export class T140RtpMultiplexer extends EventEmitter {
     }
 
     // Remove all listeners from the stream
-    streamInfo.stream.removeAllListeners();
+    if (streamInfo.stream instanceof EventEmitter) {
+      streamInfo.stream.removeAllListeners();
+    }
 
     // Send any remaining characters
     if (streamInfo.charQueue.length > 0) {
@@ -243,23 +252,63 @@ export class T140RtpMultiplexer extends EventEmitter {
    */
   private _setupStreamHandlers(streamInfo: StreamInfo): void {
     const { stream, options, id } = streamInfo;
+    if (isAsyncIterable(stream)) {
+      // Async iterable path (modern LLM SDK streams)
+      (async () => {
+        try {
+          for await (const chunk of stream) {
+            const { text, metadata } = extractTextFromChunk(chunk);
 
+            // Handle metadata if enabled
+            if (metadata && options.handleMetadata) {
+              const metadataWithStreamId = {
+                ...metadata,
+                streamId: id,
+              };
+
+              this.emit('metadata', metadataWithStreamId);
+
+              const metadataCallback = options.metadataCallback || streamInfo.config.metadataCallback;
+              if (metadataCallback) {
+                metadataCallback(metadataWithStreamId);
+              }
+            }
+
+            // Handle text content
+            if (text) {
+              streamInfo.charQueue.push(...toGraphemes(text));
+            }
+          }
+          // Stream exhausted — equivalent to 'end' event
+          this.removeStream(id);
+        } catch (err) {
+          // Equivalent to 'error' event
+          this.emit('streamError', {
+            streamId: id,
+            error: err,
+          });
+          this.removeStream(id);
+        }
+      })().catch((err) => {
+        this.emit('streamError', { streamId: id, error: err });
+        this.removeStream(id);
+      });
+      return;
+    }
+
+    // EventEmitter path (existing behavior — unchanged)
     stream.on('data', (chunk) => {
       const { text, metadata } = extractTextFromChunk(chunk);
 
       // Handle metadata if enabled
       if (metadata && options.handleMetadata) {
-        // Add stream ID to metadata
         const metadataWithStreamId = {
           ...metadata,
           streamId: id,
         };
 
-        // Emit metadata event
         this.emit('metadata', metadataWithStreamId);
         stream.emit('metadata', metadataWithStreamId);
-
-        // Call metadata callback if provided
         const metadataCallback = options.metadataCallback || streamInfo.config.metadataCallback;
         if (metadataCallback) {
           metadataCallback(metadataWithStreamId);
@@ -268,23 +317,17 @@ export class T140RtpMultiplexer extends EventEmitter {
 
       // Handle text content
       if (text) {
-        // Add to character queue using grapheme clusters for proper Unicode handling
         streamInfo.charQueue.push(...toGraphemes(text));
       }
     });
-
     stream.on('end', () => {
       this.removeStream(id);
     });
-
     stream.on('error', (err) => {
-      // Emit stream-specific error
       this.emit('streamError', {
         streamId: id,
         error: err,
       });
-
-      // Remove the stream on error
       this.removeStream(id);
     });
   }
@@ -316,7 +359,9 @@ export class T140RtpMultiplexer extends EventEmitter {
       }
 
       // Remove all listeners
-      streamInfo.stream.removeAllListeners();
+      if (streamInfo.stream instanceof EventEmitter) {
+        streamInfo.stream.removeAllListeners();
+      }
     }
 
     // Clear streams map

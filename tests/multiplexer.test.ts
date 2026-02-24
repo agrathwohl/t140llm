@@ -19,7 +19,7 @@ class MockTransport extends EventEmitter {
 }
 
 // Mock for TextDataStream
-class MockStream extends EventEmitter implements TextDataStream {
+class MockStream extends EventEmitter {
   constructor(public id: string) {
     super();
   }

@@ -10,14 +10,13 @@ export interface LLMMetadata {
 }
 
 /**
- * Interface for any streaming data source
+ * A stream of text data from an LLM or other source.
+ *
+ * Accepts either:
+ * - An EventEmitter emitting 'data', 'end', 'error', and optionally 'metadata' events
+ * - An AsyncIterable yielding chunks (for direct use with LLM SDK streams)
  */
-export interface TextDataStream extends EventEmitter {
-  on(event: 'data', listener: (data: any) => void): this;
-  on(event: 'end', listener: () => void): this;
-  on(event: 'error', listener: (error: Error) => void): this;
-  on(event: 'metadata', listener: (metadata: LLMMetadata) => void): this;
-}
+export type TextDataStream = EventEmitter | AsyncIterable<unknown>;
 
 /**
  * Configuration options for stream processors

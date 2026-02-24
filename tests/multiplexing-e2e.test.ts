@@ -2,7 +2,7 @@ import { EventEmitter } from 'events';
 import { TextDataStream, LLMMetadata } from '../src/interfaces';
 
 // Mock the necessary classes
-class MockStream extends EventEmitter implements TextDataStream {
+class MockStream extends EventEmitter {
   public receivedTexts: string[] = [];
   public receivedMetadata: LLMMetadata[] = [];
   

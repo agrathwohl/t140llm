@@ -75,6 +75,7 @@ $ npm install --save t140llm
 - [x] UNIX STREAM sockets (for single LLM stream support)
 - [x] WebSocket
 - [x] Stream Multiplexing (combine multiple LLM streams into a single RTP output)
+- [x] Direct AsyncIterable support (pass LLM SDK streams directly — no EventEmitter wrapping needed)
 
 ### Support
 
@@ -226,39 +227,12 @@ processAIStream(stream);
 ```typescript
 import { processAIStream } from "t140llm";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-
-// Initialize Gemini client
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
 const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
-
-// Create a chat session
 const chat = model.startChat();
-
-// Get a streaming response
 const result = await chat.sendMessageStream("Write a short story.");
-
-// Create an event emitter to handle streaming
-const { EventEmitter } = require('events');
-const stream = new EventEmitter();
-
-// Process the stream
-const processChunks = async () => {
-  try {
-    for await (const chunk of result.stream) {
-      // Emit each chunk
-      stream.emit('data', chunk);
-    }
-    // Signal the end of the stream
-    stream.emit('end');
-  } catch (error) {
-    stream.emit('error', error);
-  }
-};
-
-processChunks();
-
-// Process the stream and convert to T.140
-processAIStream(stream);
+// Pass the async iterable stream directly — no EventEmitter wrapper needed
+processAIStream(result.stream);
 ```
 
 #### With Ollama
@@ -726,7 +700,7 @@ your quality of experience when latency is a particularly sensitive measurement.
 
 ### processAIStream(stream, [websocketUrl])
 
-- `stream` <TextDataStream> The streaming data source that emits text chunks.
+- `stream` <TextDataStream> The streaming data source — an EventEmitter emitting text chunks, or an AsyncIterable (e.g., direct LLM SDK stream).
 - `websocketUrl` <[string][string-mdn-url]> Optional. WebSocket URL to connect to. Defaults to `ws://localhost:8765`.
 - returns: <void>
 
@@ -734,7 +708,7 @@ Processes an AI stream and sends the text chunks as T.140 data through a WebSock
 
 ### processAIStreamToRtp(stream, remoteAddress, [remotePort], [rtpConfig])
 
-- `stream` <TextDataStream> The streaming data source that emits text chunks.
+- `stream` <TextDataStream> The streaming data source — an EventEmitter emitting text chunks, or an AsyncIterable (e.g., direct LLM SDK stream).
 - `remoteAddress` <[string][string-mdn-url]> The remote IP address to send RTP packets to. Only used if no custom transport is provided.
 - `remotePort` <[number][number-mdn-url]> Optional. The remote port to send RTP packets to. Defaults to `5004`. Only used if no custom transport is provided.
 - `rtpConfig` <RtpConfig> Optional. Configuration options for RTP:
@@ -805,7 +779,7 @@ Creates a multiplexer that can combine multiple LLM streams into a single RTP ou
 
 ### processAIStreamToRtp(stream, remoteAddress, [remotePort], [rtpConfig])
 
-- `stream` <TextDataStream> The streaming data source that emits text chunks.
+- `stream` <TextDataStream> The streaming data source — an EventEmitter emitting text chunks, or an AsyncIterable (e.g., direct LLM SDK stream).
 - `remoteAddress` <[string][string-mdn-url]> The remote IP address to send RTP packets to.
 - `remotePort` <[number][number-mdn-url]> Optional. The remote port to send RTP packets to. Defaults to `5004`.
 - `rtpConfig` <RtpConfig> Optional. Configuration options for RTP:
@@ -824,7 +798,7 @@ Processes an AI stream and sends the text chunks directly as T.140 data over RTP
 
 ### processAIStreamToSrtp(stream, remoteAddress, [remotePort], srtpConfig)
 
-- `stream` <TextDataStream> The streaming data source that emits text chunks.
+- `stream` <TextDataStream> The streaming data source — an EventEmitter emitting text chunks, or an AsyncIterable (e.g., direct LLM SDK stream).
 - `remoteAddress` <[string][string-mdn-url]> The remote IP address to send SRTP packets to. Only used if no custom transport is provided.
 - `remotePort` <[number][number-mdn-url]> Optional. The remote port to send SRTP packets to. Defaults to `5006`. Only used if no custom transport is provided.
 - `srtpConfig` <SrtpConfig> SRTP configuration including master key and salt.
