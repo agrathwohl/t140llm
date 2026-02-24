@@ -33,13 +33,13 @@
 - [API Reference](#api-reference)
   - [processAIStream(stream, [websocketUrl])](#processaistreamstream-websocketurl)
   - [processAIStreamToRtp(stream, remoteAddress, [remotePort], [rtpConfig])](#processaistreamtortpstream-remoteaddress-remoteport-rtpconfig)
-  - [processAIStreamToSrtp(stream, remoteAddress, srtpConfig, [remotePort])](#processaistreamtosrtpstream-remoteaddress-srtpconfig-remoteport)
+  - [processAIStreamToSrtp(stream, remoteAddress, [remotePort], srtpConfig)](#processaistreamtosrtpstream-remoteaddress-remoteport-srtpconfig)
   - [processAIStreamToDirectSocket(stream, [socketPath], [rtpConfig])](#processaistreamtodirectsocketstream-socketpath-rtpconfig)
   - [processAIStreamsToMultiplexedRtp(streams, remoteAddress, [remotePort], [rtpConfig])](#processaistreamstomultiplexedrtpstreams-remoteaddress-remoteport-rtpconfig)
-  - [createT140WebSocketConnection(websocketUrl, [options])](#createt140websocketconnectionwebsocketurl-options)
+  - [createT140WebSocketTransport(websocketUrl, [options])](#createt140websockettransportwebsocketurl-options)
   - [createDirectSocketTransport(socketPath, [rtpConfig])](#createdirectsockettransportsocketpath-rtpconfig)
   - [createT140RtpTransport(remoteAddress, [remotePort], [rtpConfig])](#createt140rtptransportremoteaddress-remoteport-rtpconfig)
-  - [createT140SrtpTransport(remoteAddress, srtpConfig, [remotePort])](#createt140srtptransportremoteaddress-srtpconfig-remoteport)
+  - [createT140SrtpTransport(remoteAddress, [remotePort], srtpConfig)](#createt140srtptransportremoteaddress-remoteport-srtpconfig)
   - [createT140RtpMultiplexer(remoteAddress, [remotePort], [multiplexConfig])](#createt140rtpmultiplexerremoteaddress-remoteport-multiplexconfig)
   - [createRtpPacket(sequenceNumber, timestamp, payload, [options])](#creatertppacketsequencenumber-timestamp-payload-options)
   - [createSrtpKeysFromPassphrase(passphrase)](#createsrtpkeysfrompassphrasepassphrase)
@@ -51,7 +51,7 @@
 
 ## Pre-requisites
 
-- [Node.js][nodejs-url] >= 10.18.1
+- [Node.js][nodejs-url] >= 16.0.0
 - [NPM][npm-url] >= 6.13.4 ([NPM][npm-url] comes with [Node.js][nodejs-url] so there is no need to install separately.)
 
 ## Setup
@@ -349,12 +349,12 @@ const { masterKey, masterSalt } = createSrtpKeysFromPassphrase(
 const transport = processAIStreamToSrtp(
   stream,
   "192.168.1.100", // Remote IP address
+  5006, // SRTP port (optional, default: 5006)
   {
     masterKey, // SRTP master key
     masterSalt, // SRTP master salt
     payloadType: 96, // T.140 payload type (optional)
   },
-  5006, // SRTP port (optional, default: 5006)
 );
 
 // Later, you can close the transport if needed
@@ -458,10 +458,10 @@ const transport = processAIStreamToRtp(
 You can establish the transport connection before the LLM stream is available, which can reduce latency when the stream starts:
 
 ```typescript
-import { createT140WebSocketConnection } from "t140llm";
+import { createT140WebSocketTransport } from "t140llm";
 
 // Create the WebSocket connection early, before the LLM stream is available
-const { connection, attachStream } = createT140WebSocketConnection(
+const { connection, attachStream } = createT140WebSocketTransport(
   "ws://localhost:5004",
 );
 
@@ -746,7 +746,7 @@ Processes an AI stream and sends the text chunks as T.140 data through a WebSock
   - `fecEnabled` <[boolean][boolean-mdn-url]> Optional. Enable Forward Error Correction. Defaults to `false`.
   - `fecPayloadType` <[number][number-mdn-url]> Optional. The payload type for FEC packets. Defaults to `97`.
 
-### createT140WebSocketConnection(websocketUrl, [options])
+### createT140WebSocketTransport(websocketUrl, [options])
 
 - `websocketUrl` <[string][string-mdn-url]> Optional. WebSocket URL to connect to. Defaults to `ws://localhost:8765`.
 - `options` <Object> Optional. Configuration options:
@@ -779,11 +779,11 @@ Creates a direct socket transport that can be used for T.140 RTP transmission. T
 
 Creates an RTP transport that can be used for T.140 transmission. This allows establishing the connection before the LLM stream is available.
 
-### createT140SrtpTransport(remoteAddress, srtpConfig, [remotePort])
+### createT140SrtpTransport(remoteAddress, [remotePort], srtpConfig)
 
 - `remoteAddress` <[string][string-mdn-url]> The remote IP address to send SRTP packets to.
-- `srtpConfig` <SrtpConfig> SRTP configuration with master key and salt.
 - `remotePort` <[number][number-mdn-url]> Optional. The remote port to send SRTP packets to. Defaults to `5006`.
+- `srtpConfig` <SrtpConfig> SRTP configuration with master key and salt.
 - returns: <Object> An object containing:
   - `transport` <T140RtpTransport> The RTP transport instance configured for SRTP
   - `attachStream` <Function> A function to attach a TextDataStream to this transport
@@ -822,16 +822,16 @@ Creates a multiplexer that can combine multiple LLM streams into a single RTP ou
 
 Processes an AI stream and sends the text chunks directly as T.140 data over RTP. When FEC is enabled, it adds Forward Error Correction packets according to RFC 5109 to help recover from packet loss. If a custom transport is provided, it will be used instead of creating a UDP socket.
 
-### processAIStreamToSrtp(stream, remoteAddress, srtpConfig, [remotePort])
+### processAIStreamToSrtp(stream, remoteAddress, [remotePort], srtpConfig)
 
 - `stream` <TextDataStream> The streaming data source that emits text chunks.
 - `remoteAddress` <[string][string-mdn-url]> The remote IP address to send SRTP packets to. Only used if no custom transport is provided.
+- `remotePort` <[number][number-mdn-url]> Optional. The remote port to send SRTP packets to. Defaults to `5006`. Only used if no custom transport is provided.
 - `srtpConfig` <SrtpConfig> SRTP configuration including master key and salt.
   - `masterKey` <Buffer> Required. The SRTP master key.
   - `masterSalt` <Buffer> Required. The SRTP master salt.
-  - `profile` <[number][number-mdn-url]> Optional. The SRTP crypto profile.
+  - `profile` <SrtpProtectionProfile> Optional. The SRTP crypto profile (valid values: 0x0001–0x0008).
   - `customTransport` <TransportStream> Optional. A custom transport implementation to use instead of the default UDP socket.
-- `remotePort` <[number][number-mdn-url]> Optional. The remote port to send SRTP packets to. Defaults to `5006`. Only used if no custom transport is provided.
 - returns: <T140RtpTransport> The transport object that can be used to close the connection.
 
 Processes an AI stream and sends the text chunks directly as T.140 data over secure SRTP. If a custom transport is provided, it will be used instead of creating a UDP socket.

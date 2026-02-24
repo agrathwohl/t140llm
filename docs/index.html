@@ -199,8 +199,8 @@
                         </div>
                         <div class="col-md-4 text-center">
                             <div class="feature-icon">🤖</div>
-                            <h4>LLM-Generated Algorithms</h4>
-                            <p>Dynamically create steganography algorithms using LLMs.</p>
+                            <h4>LSB Steganography</h4>
+                            <p>Built-in Least Significant Bit encoding for hiding data in cover media.</p>
                         </div>
                         <div class="col-md-4 text-center">
                             <div class="feature-icon">🔄</div>
@@ -217,7 +217,7 @@
                     
                     <h3>Requirements</h3>
                     <ul>
-                        <li>Node.js ≥ 10.18.1</li>
+                        <li>Node.js ≥ 16.0.0</li>
                         <li>npm ≥ 6.13.4</li>
                     </ul>
                     
@@ -266,14 +266,14 @@
                     
                     <div class="api-item">
                         <h3>processAIStreamToSrtp</h3>
-                        <div class="api-signature">processAIStreamToSrtp(stream: TextDataStream, remoteAddress: string, srtpConfig: SrtpConfig, remotePort?: number): Promise&lt;void&gt;</div>
+                        <div class="api-signature">processAIStreamToSrtp(stream: TextDataStream, remoteAddress: string, remotePort?: number, srtpConfig?: SrtpConfig): Promise&lt;void&gt;</div>
                         <p>Processes an AI text stream and sends it using Secure RTP (SRTP).</p>
                         <h4>Parameters:</h4>
                         <ul>
                             <li><code>stream</code>: <code>TextDataStream</code> - The AI text stream to process</li>
                             <li><code>remoteAddress</code>: <code>string</code> - The remote IP address</li>
+                            <li><code>remotePort</code>: <code>number</code> (optional) - The remote port (default: 5006)</li>
                             <li><code>srtpConfig</code>: <code>SrtpConfig</code> - SRTP configuration including security keys</li>
-                            <li><code>remotePort</code>: <code>number</code> (optional) - The remote port (default: 5004)</li>
                         </ul>
                         <h4>Returns:</h4>
                         <p>A Promise that resolves when the stream has been completely processed.</p>
@@ -296,8 +296,8 @@
                     <h3 class="mt-5 mb-4">Pre-Connection Functions</h3>
                     
                     <div class="api-item">
-                        <h3>createT140WebSocketConnection</h3>
-                        <div class="api-signature">createT140WebSocketConnection(websocketUrl?: string): TransportStream</div>
+                        <h3>createT140WebSocketTransport</h3>
+                        <div class="api-signature">createT140WebSocketTransport(websocketUrl?: string): TransportStream</div>
                         <p>Creates a WebSocket transport connection without starting data transmission.</p>
                         <h4>Parameters:</h4>
                         <ul>
@@ -323,13 +323,13 @@
                     
                     <div class="api-item">
                         <h3>createT140SrtpTransport</h3>
-                        <div class="api-signature">createT140SrtpTransport(remoteAddress: string, srtpConfig: SrtpConfig, remotePort?: number): TransportStream</div>
+                        <div class="api-signature">createT140SrtpTransport(remoteAddress: string, remotePort?: number, srtpConfig?: SrtpConfig): TransportStream</div>
                         <p>Creates an SRTP transport connection without starting data transmission.</p>
                         <h4>Parameters:</h4>
                         <ul>
                             <li><code>remoteAddress</code>: <code>string</code> - The remote IP address</li>
+                            <li><code>remotePort</code>: <code>number</code> (optional) - The remote port (default: 5006)</li>
                             <li><code>srtpConfig</code>: <code>SrtpConfig</code> - SRTP configuration including security keys</li>
-                            <li><code>remotePort</code>: <code>number</code> (optional) - The remote port</li>
                         </ul>
                         <h4>Returns:</h4>
                         <p>A TransportStream instance ready for use with processAIStream.</p>
@@ -374,7 +374,7 @@
                         <p>Interface for LLM metadata such as tool calls, reasoning, and other structured data.</p>
                         <div class="api-signature">interface LLMMetadata {
   type: 'tool_call' | 'tool_result' | 'custom' | 'reasoning' | string;
-  content: any;
+  content: unknown;
   id?: string;
 }</div>
                     </div>
@@ -388,6 +388,7 @@
   metadataCallback?: (metadata: LLMMetadata) => void;
   sendMetadataOverTransport?: boolean;
   preCreateConnection?: boolean;
+  onError?: (error: Error) => void;
 }</div>
                     </div>
                     
@@ -413,10 +414,10 @@
                     <div class="api-item">
                         <h3>SrtpConfig</h3>
                         <p>Configuration for SRTP security, extends RtpConfig.</p>
-                        <div class="api-signature">interface SrtpConfig extends RtpConfig {
+                        <div class="api-signature">interface SrtpConfig extends Omit&lt;RtpConfig, 'charRateLimit'&gt; {
   masterKey: Buffer;
   masterSalt: Buffer;
-  profile?: number;
+  profile?: SrtpProtectionProfile;
   isSRTCP?: boolean;
 }</div>
                     </div>
@@ -428,24 +429,24 @@
                         <p>Configuration interface for steganography.</p>
                         <div class="api-signature">interface StegConfig {
   enabled: boolean;
-  encodeMode: 'llm' | 'fixed';
+  encodeMode: 'fixed';
   coverMedia?: Buffer[];
   prompt?: string;
   algorithm?: string;
   seed?: string;
   encodingRatio?: number;
-  llmProvider?: any;
+  llmProvider?: unknown;
 }</div>
                         <h4>Properties:</h4>
                         <ul>
                             <li><code>enabled</code>: <code>boolean</code> - Enable/disable steganography</li>
-                            <li><code>encodeMode</code>: <code>'llm' | 'fixed'</code> - Use LLM-generated or built-in algorithm</li>
+                            <li><code>encodeMode</code>: <code>'fixed'</code> - Use built-in encoding algorithm</li>
                             <li><code>coverMedia</code>: <code>Buffer[]</code> - Array of cover media buffers</li>
                             <li><code>prompt</code>: <code>string</code> - Custom prompt for LLM algorithm generation</li>
                             <li><code>algorithm</code>: <code>string</code> - Custom algorithm code</li>
                             <li><code>seed</code>: <code>string</code> - Random seed for deterministic algorithm generation</li>
                             <li><code>encodingRatio</code>: <code>number</code> - Percentage of packet to encode (0-100)</li>
-                            <li><code>llmProvider</code>: <code>any</code> - Custom LLM provider for algorithm generation</li>
+                            <li><code>llmProvider</code>: <code>unknown</code> - Custom LLM provider for algorithm generation</li>
                         </ul>
                     </div>
 
@@ -741,10 +742,9 @@ const response = await client.messages.create({
 });
 
 // Process the stream using secure SRTP
-await processAIStreamToSrtp(response, '192.168.1.100', {
+await processAIStreamToSrtp(response, '192.168.1.100', 5006, {
   masterKey,
   masterSalt,
-  enableFec: true,
 });
 </code></pre>
                     
