@@ -42,7 +42,6 @@ export const MIN_TOKENS_PER_STREAM = 1;
 // Multiplexing constants
 export const INITIAL_CSRC_ID = 1;
 
-
 // Metadata and multiplexing payload limits
 export const MAX_METADATA_PAYLOAD_SIZE = 1200; // Safe for UDP without fragmentation
 export const MULTIPLEX_STREAM_DELIMITER = '\x1E'; // ASCII Record Separator - avoids colon ambiguity
@@ -81,7 +80,7 @@ export const RED_BLOCK_HEADER_SIZE = 4;          // Total: 4 bytes per redundant
 export const SRTP_MASTER_KEY_SIZE = 16;          // 128 bits
 export const SRTP_MASTER_SALT_SIZE = 14;         // 112 bits
 export const PBKDF2_TOTAL_DERIVED_SIZE = 30;     // Key + Salt = 30 bytes
-export const PBKDF2_ITERATIONS = 600000;         // OWASP recommended minimum for PBKDF2-HMAC-SHA256 (2023)
+export const PBKDF2_ITERATIONS = 600000; // OWASP 2023 min for PBKDF2-HMAC-SHA256
 
 // Random seed generation
 export const RANDOM_SEED_SEGMENT_LENGTH = 13;    // Length of each random seed segment

@@ -84,7 +84,6 @@ export class T140StreamDemultiplexer extends EventEmitter {
         const firstByte = data[0];
         // Extract CSRC count (CC field, bottom 4 bits per RFC 3550)
         const csrcCount = firstByte & 0x0F;
-
         if (csrcCount > 0) {
           // Read the first CSRC as stream identifier
           // CSRC identifiers start at byte 12 in the RTP header per RFC 3550
@@ -95,47 +94,45 @@ export class T140StreamDemultiplexer extends EventEmitter {
           const textContent = payload.toString('utf-8');
           this._processText(streamId, textContent);
           return;
-        } else {
+        }
           // No CSRC, can't identify stream
-          this.emit('error', new Error('No CSRC identifiers found in packet'));
-          return;
-        }
-      } else {
+        this.emit('error', new Error('No CSRC identifiers found in packet'));
+        return;
+      }
         // Using prefix-based identification
-        // Calculate dynamic RTP header size per RFC 3550
-        const firstByte = data[0];
-        const csrcCount = firstByte & 0x0F;
-        const headerSize = RTP_HEADER_SIZE + (csrcCount * RTP_CSRC_ENTRY_SIZE);
-        const payloadWithPrefix = data.slice(headerSize);
-        const payloadStr = payloadWithPrefix.toString('utf-8');
-        if (payloadStr.startsWith('MD:')) {
-          // This is a metadata packet
-          const metadataContent = payloadStr.substring(3);
-          try {
-            // Attempt to parse as JSON
-            const metadata = JSON.parse(metadataContent);
-            if (metadata.streamId) {
-              this._processMetadata(metadata.streamId, metadata);
-            } else {
-              this.emit('error', new Error('Metadata packet missing streamId'));
-            }
-          } catch (err) {
-            this.emit('error', new Error(`Failed to parse metadata: ${err}`));
+      // Calculate dynamic RTP header size per RFC 3550
+      const firstByte = data[0];
+      const csrcCount = firstByte & 0x0F;
+      const headerSize = RTP_HEADER_SIZE + (csrcCount * RTP_CSRC_ENTRY_SIZE);
+      const payloadWithPrefix = data.slice(headerSize);
+      const payloadStr = payloadWithPrefix.toString('utf-8');
+      if (payloadStr.startsWith('MD:')) {
+        // This is a metadata packet
+        const metadataContent = payloadStr.substring(3);
+        try {
+          // Attempt to parse as JSON
+          const metadata = JSON.parse(metadataContent);
+          if (metadata.streamId) {
+            this._processMetadata(metadata.streamId, metadata);
+          } else {
+            this.emit('error', new Error('Metadata packet missing streamId'));
           }
+        } catch (err) {
+          this.emit('error', new Error(`Failed to parse metadata: ${err}`));
+        }
 
-          return;
-        }
-        // Check for stream identifier prefix (format: "streamId\x1Epayload")
-        const delimiterIndex = payloadStr.indexOf(MULTIPLEX_STREAM_DELIMITER);
-        if (delimiterIndex > 0) {
-          streamId = payloadStr.substring(0, delimiterIndex);
-          const textContent = payloadStr.substring(delimiterIndex + 1);
-          this._processText(streamId, textContent);
-        } else {
-          // No identifier found, treat as default stream
-          streamId = 'default';
-          this._processText(streamId, payloadStr);
-        }
+        return;
+      }
+      // Check for stream identifier prefix
+      const delimiterIndex = payloadStr.indexOf(MULTIPLEX_STREAM_DELIMITER);
+      if (delimiterIndex > 0) {
+        streamId = payloadStr.substring(0, delimiterIndex);
+        const textContent = payloadStr.substring(delimiterIndex + 1);
+        this._processText(streamId, textContent);
+      } else {
+        // No identifier found, treat as default stream
+        streamId = 'default';
+        this._processText(streamId, payloadStr);
       }
     } catch (err) {
       this.emit('error', new Error(`Error processing packet: ${err}`));

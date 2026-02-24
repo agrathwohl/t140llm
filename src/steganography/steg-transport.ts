@@ -35,7 +35,7 @@ export class StegTransport implements StegTransportInterface {
       algorithm: config.algorithm,
       seed: config.seed || this._generateRandomSeed(),
       encodingRatio: config.encodingRatio || 100,
-      llmProvider: config.llmProvider
+      llmProvider: config.llmProvider,
     };
 
     this._initializeDefaultAlgorithm();
@@ -133,13 +133,13 @@ export class StegTransport implements StegTransportInterface {
       const result = Buffer.from(cover);
 
       // Store the data length in the first 32 bits
-      for (let i = 0; i < 32; i++) {
+      for (let i = 0; i < 32; i += 1) {
         const bit = (data.length >> i) & 1;
         result[i] = (result[i] & 0xFE) | bit;
       }
 
       // Embed the data bits
-      for (let i = 0; i < data.length * 8; i++) {
+      for (let i = 0; i < data.length * 8; i += 1) {
         const coverIndex = i + 32;
         const byteIndex = Math.floor(i / 8);
         const bitIndex = i % 8;
@@ -152,7 +152,7 @@ export class StegTransport implements StegTransportInterface {
 
     this.decodeFunction = (stegData: Buffer): Buffer => {
       let dataLength = 0;
-      for (let i = 0; i < 32; i++) {
+      for (let i = 0; i < 32; i += 1) {
         const bit = stegData[i] & 1;
         dataLength |= (bit << i);
       }
@@ -162,7 +162,7 @@ export class StegTransport implements StegTransportInterface {
       }
 
       const result = Buffer.alloc(dataLength);
-      for (let i = 0; i < dataLength * 8; i++) {
+      for (let i = 0; i < dataLength * 8; i += 1) {
         const coverIndex = i + 32;
         const byteIndex = Math.floor(i / 8);
         const bitIndex = i % 8;

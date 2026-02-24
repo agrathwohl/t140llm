@@ -1,8 +1,8 @@
+import createDebug from 'debug';
 import * as fs from 'fs';
 import * as https from 'https';
 import * as net from 'net';
 import WebSocket from 'ws';
-import createDebug from 'debug';
 import { createRtpPacket } from '../rtp/create-rtp-packet';
 import {
   DEFAULT_TIMESTAMP_INCREMENT,
@@ -107,9 +107,10 @@ export function createWebSocketServer(options: WebSocketServerOptions = {}): Web
         pendingMessages.push(rtpPacket);
       }
 
-      // Update sequence number and timestamp (wrap at 16-bit boundary per RTP spec)
+      // Update sequence number and timestamp
       sequenceNumber = (sequenceNumber + 1) % RTP_MAX_SEQUENCE_NUMBER;
-      timestamp = (timestamp + DEFAULT_TIMESTAMP_INCREMENT) >>> 0; // Wrap at 32-bit boundary per RTP spec
+      // Wrap at 32-bit boundary per RTP spec
+      timestamp = (timestamp + DEFAULT_TIMESTAMP_INCREMENT) >>> 0;
     });
 
     ws.on('close', () => {

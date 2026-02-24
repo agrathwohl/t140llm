@@ -1,6 +1,6 @@
 import * as dgram from 'dgram';
 import { EventEmitter } from 'events';
-import { SrtpSession, RtpPacket } from 'werift-rtp';
+import { RtpPacket, SrtpSession } from 'werift-rtp';
 import {
   RtpConfig,
   SrtpConfig,

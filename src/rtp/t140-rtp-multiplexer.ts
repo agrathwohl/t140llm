@@ -19,7 +19,6 @@ import { ErrorFactory } from '../utils/error-factory';
 import { extractTextFromChunk } from '../utils/extract-text';
 import { T140RtpTransport } from './t140-rtp-transport';
 
-
 /**
  * Type guard to detect AsyncIterable streams (modern LLM SDK streams).
  */

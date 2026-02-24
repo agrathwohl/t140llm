@@ -58,7 +58,6 @@ export function resolveStreamOptions(
   };
 }
 
-
 /**
  * Type guard to detect AsyncIterable streams (modern LLM SDK streams).
  */

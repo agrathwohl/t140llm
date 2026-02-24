@@ -5,6 +5,7 @@ import {
   BIT_SHIFT_32,
   BIT_SHIFT_64,
   DEFAULT_T140_PAYLOAD_TYPE,
+  MULTIPLEX_STREAM_DELIMITER,
   RTP_CSRC_ENTRY_SIZE,
   RTP_HEADER_SIZE,
   RTP_OFFSET_CSRC,
@@ -14,7 +15,6 @@ import {
   RTP_OFFSET_TIMESTAMP,
   RTP_OFFSET_VERSION,
   RTP_VERSION,
-  MULTIPLEX_STREAM_DELIMITER,
 } from '../utils/constants';
 import { generateSecureSSRC } from '../utils/security';
 
@@ -73,8 +73,9 @@ export function createRtpPacket(
     // Add metadata prefix "MD:" to identify these packets
     payloadBuffer = Buffer.from(`MD:${payload}`, 'utf-8');
   } else if (options.multiplexEnabled && options.streamIdentifier && !options.useCsrcForStreamId) {
-    // Add stream identifier as a prefix for multiplexed streams when not using CSRC
-    payloadBuffer = Buffer.from(`${options.streamIdentifier}${MULTIPLEX_STREAM_DELIMITER}${payload}`, 'utf-8');
+    const streamPayload =
+      `${options.streamIdentifier}${MULTIPLEX_STREAM_DELIMITER}${payload}`;
+    payloadBuffer = Buffer.from(streamPayload, 'utf-8');
   } else {
     payloadBuffer = Buffer.from(payload, 'utf-8');
   }
