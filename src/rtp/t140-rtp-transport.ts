@@ -282,7 +282,7 @@ export class T140RtpTransport extends EventEmitter {
     // Timestamp recovery field: XOR of all protected packets' timestamps (RFC 5109)
     let tsRecovery = 0;
     let lenRecovery = 0;
-    for (let i = 0; i < packets.length; i++) {
+    for (let i = 0; i < packets.length; i += 1) {
       tsRecovery ^= timestamps[i];
       lenRecovery ^= (packets[i].length - RTP_HEADER_SIZE);
     }

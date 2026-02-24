@@ -95,11 +95,11 @@ export class T140StreamDemultiplexer extends EventEmitter {
           this._processText(streamId, textContent);
           return;
         }
-          // No CSRC, can't identify stream
+        // No CSRC, can't identify stream
         this.emit('error', new Error('No CSRC identifiers found in packet'));
         return;
       }
-        // Using prefix-based identification
+      // Using prefix-based identification
       // Calculate dynamic RTP header size per RFC 3550
       const firstByte = data[0];
       const csrcCount = firstByte & 0x0F;
