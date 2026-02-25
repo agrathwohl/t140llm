@@ -23,7 +23,7 @@ import { T140RtpTransport } from './t140-rtp-transport';
  * Type guard to detect AsyncIterable streams (modern LLM SDK streams).
  */
 function isAsyncIterable(
-  stream: TextDataStream,
+  stream: TextDataStream
 ): stream is AsyncIterable<unknown> {
   return (
     stream != null &&
@@ -75,7 +75,7 @@ export class T140RtpMultiplexer extends EventEmitter {
   constructor(
     remoteAddress: string,
     remotePort: number = DEFAULT_RTP_PORT,
-    multiplexConfig: RtpConfig = {},
+    multiplexConfig: RtpConfig = {}
   ) {
     super();
 
@@ -89,7 +89,7 @@ export class T140RtpMultiplexer extends EventEmitter {
     this.transport = new T140RtpTransport(
       remoteAddress,
       remotePort,
-      this.multiplexConfig,
+      this.multiplexConfig
     );
 
     // Forward transport errors
@@ -112,7 +112,7 @@ export class T140RtpMultiplexer extends EventEmitter {
       // Refill token bucket based on elapsed time
       this.tokenBucket = Math.min(
         charRateLimit,
-        this.tokenBucket + elapsedMs * tokenRefillRate,
+        this.tokenBucket + elapsedMs * tokenRefillRate
       );
 
       // Process all streams in a round-robin fashion
@@ -123,7 +123,7 @@ export class T140RtpMultiplexer extends EventEmitter {
         // Calculate tokens per stream (minimum 1)
         const tokensPerStream = Math.max(
           MIN_TOKENS_PER_STREAM,
-          Math.floor(this.tokenBucket / streamIds.length),
+          Math.floor(this.tokenBucket / streamIds.length)
         );
 
         // Process characters from each stream
@@ -134,7 +134,7 @@ export class T140RtpMultiplexer extends EventEmitter {
           if (streamInfo.charQueue.length > 0) {
             const charsToSend = Math.min(
               tokensPerStream,
-              streamInfo.charQueue.length,
+              streamInfo.charQueue.length
             );
             const textChunk = streamInfo.charQueue
               .splice(0, charsToSend)
@@ -164,15 +164,15 @@ export class T140RtpMultiplexer extends EventEmitter {
     id: string,
     stream: TextDataStream,
     streamConfig: RtpConfig = {},
-    processorOptions: ProcessorOptions = {},
+    processorOptions: ProcessorOptions = {}
   ): boolean {
     // Check if stream with this ID already exists
     if (this.streams.has(id)) {
       this.emit(
         'error',
         ErrorFactory.INVALID_CONFIG(
-          `Stream with ID ${id} already exists in multiplexer`,
-        ),
+          `Stream with ID ${id} already exists in multiplexer`
+        )
       );
       return false;
     }

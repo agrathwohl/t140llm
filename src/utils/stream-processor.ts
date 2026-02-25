@@ -43,7 +43,7 @@ export function resolveStreamOptions(
     handleMetadata?: boolean;
     metadataCallback?: (metadata: LLMMetadata) => void;
     sendMetadataOverTransport?: boolean;
-  },
+  }
 ): ResolvedStreamOptions {
   return {
     processBackspaces:
@@ -67,7 +67,7 @@ export function resolveStreamOptions(
  * Type guard to detect AsyncIterable streams (modern LLM SDK streams).
  */
 function isAsyncIterable(
-  stream: TextDataStream,
+  stream: TextDataStream
 ): stream is AsyncIterable<unknown> {
   return (
     stream != null &&
@@ -86,7 +86,7 @@ function isAsyncIterable(
 export function attachStreamProcessor(
   stream: TextDataStream,
   options: ResolvedStreamOptions,
-  callbacks: StreamProcessorCallbacks,
+  callbacks: StreamProcessorCallbacks
 ): void {
   let textBuffer = '';
   if (isAsyncIterable(stream)) {
@@ -118,7 +118,7 @@ export function attachStreamProcessor(
           if (options.processBackspaces) {
             const result = processT140BackspaceChars(
               text,
-              textBuffer,
+              textBuffer
             );
             textBuffer = result.updatedBuffer;
             textToSend = result.processedText;
@@ -177,7 +177,7 @@ export function attachStreamProcessor(
     if (options.processBackspaces) {
       const result = processT140BackspaceChars(
         text,
-        textBuffer,
+        textBuffer
       );
       textBuffer = result.updatedBuffer;
       textToSend = result.processedText;
