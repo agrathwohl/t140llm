@@ -22,8 +22,13 @@ import { T140RtpTransport } from './t140-rtp-transport';
 /**
  * Type guard to detect AsyncIterable streams (modern LLM SDK streams).
  */
-function isAsyncIterable(stream: TextDataStream): stream is AsyncIterable<unknown> {
-  return stream != null && typeof (stream as any)[Symbol.asyncIterator] === 'function';
+function isAsyncIterable(
+  stream: TextDataStream,
+): stream is AsyncIterable<unknown> {
+  return (
+    stream != null &&
+    typeof (stream as any)[Symbol.asyncIterator] === 'function'
+  );
 }
 interface StreamInfo {
   id: string;
@@ -70,7 +75,7 @@ export class T140RtpMultiplexer extends EventEmitter {
   constructor(
     remoteAddress: string,
     remotePort: number = DEFAULT_RTP_PORT,
-    multiplexConfig: RtpConfig = {}
+    multiplexConfig: RtpConfig = {},
   ) {
     super();
 
@@ -84,7 +89,7 @@ export class T140RtpMultiplexer extends EventEmitter {
     this.transport = new T140RtpTransport(
       remoteAddress,
       remotePort,
-      this.multiplexConfig
+      this.multiplexConfig,
     );
 
     // Forward transport errors
@@ -93,7 +98,8 @@ export class T140RtpMultiplexer extends EventEmitter {
     });
 
     // Setup rate limiting for all streams combined
-    const charRateLimit = this.multiplexConfig.charRateLimit || DEFAULT_CHAR_RATE_LIMIT;
+    const charRateLimit =
+      this.multiplexConfig.charRateLimit || DEFAULT_CHAR_RATE_LIMIT;
     this.tokenBucket = charRateLimit;
     const tokenRefillRate = charRateLimit / TOKEN_REFILL_RATE_DIVISOR;
 
@@ -106,7 +112,7 @@ export class T140RtpMultiplexer extends EventEmitter {
       // Refill token bucket based on elapsed time
       this.tokenBucket = Math.min(
         charRateLimit,
-        this.tokenBucket + elapsedMs * tokenRefillRate
+        this.tokenBucket + elapsedMs * tokenRefillRate,
       );
 
       // Process all streams in a round-robin fashion
@@ -117,7 +123,7 @@ export class T140RtpMultiplexer extends EventEmitter {
         // Calculate tokens per stream (minimum 1)
         const tokensPerStream = Math.max(
           MIN_TOKENS_PER_STREAM,
-          Math.floor(this.tokenBucket / streamIds.length)
+          Math.floor(this.tokenBucket / streamIds.length),
         );
 
         // Process characters from each stream
@@ -126,8 +132,13 @@ export class T140RtpMultiplexer extends EventEmitter {
           if (!streamInfo) continue;
 
           if (streamInfo.charQueue.length > 0) {
-            const charsToSend = Math.min(tokensPerStream, streamInfo.charQueue.length);
-            const textChunk = streamInfo.charQueue.splice(0, charsToSend).join('');
+            const charsToSend = Math.min(
+              tokensPerStream,
+              streamInfo.charQueue.length,
+            );
+            const textChunk = streamInfo.charQueue
+              .splice(0, charsToSend)
+              .join('');
 
             if (textChunk) {
               // Send with stream identifier
@@ -153,13 +164,16 @@ export class T140RtpMultiplexer extends EventEmitter {
     id: string,
     stream: TextDataStream,
     streamConfig: RtpConfig = {},
-    processorOptions: ProcessorOptions = {}
+    processorOptions: ProcessorOptions = {},
   ): boolean {
     // Check if stream with this ID already exists
     if (this.streams.has(id)) {
-      this.emit('error', ErrorFactory.INVALID_CONFIG(
-        `Stream with ID ${id} already exists in multiplexer`
-      ));
+      this.emit(
+        'error',
+        ErrorFactory.INVALID_CONFIG(
+          `Stream with ID ${id} already exists in multiplexer`,
+        ),
+      );
       return false;
     }
 
@@ -186,9 +200,11 @@ export class T140RtpMultiplexer extends EventEmitter {
     // Create stream info
     const processOptions = {
       ...processorOptions,
-      handleMetadata: processorOptions.handleMetadata !== false &&
+      handleMetadata:
+        processorOptions.handleMetadata !== false &&
         config.handleMetadata !== false,
-      processBackspaces: processorOptions.processBackspaces || config.processBackspaces,
+      processBackspaces:
+        processorOptions.processBackspaces || config.processBackspaces,
     };
 
     const streamInfo: StreamInfo = {
@@ -267,7 +283,9 @@ export class T140RtpMultiplexer extends EventEmitter {
 
               this.emit('metadata', metadataWithStreamId);
 
-              const metadataCallback = options.metadataCallback || streamInfo.config.metadataCallback;
+              const metadataCallback =
+                options.metadataCallback
+                || streamInfo.config.metadataCallback;
               if (metadataCallback) {
                 metadataCallback(metadataWithStreamId);
               }
@@ -308,7 +326,9 @@ export class T140RtpMultiplexer extends EventEmitter {
 
         this.emit('metadata', metadataWithStreamId);
         stream.emit('metadata', metadataWithStreamId);
-        const metadataCallback = options.metadataCallback || streamInfo.config.metadataCallback;
+        const metadataCallback =
+          options.metadataCallback
+          || streamInfo.config.metadataCallback;
         if (metadataCallback) {
           metadataCallback(metadataWithStreamId);
         }
@@ -339,7 +359,8 @@ export class T140RtpMultiplexer extends EventEmitter {
     this.transport.sendText(text, {
       ...streamInfo.config,
       streamIdentifier: streamInfo.id,
-      csrcList: streamInfo.csrcId !== undefined ? [streamInfo.csrcId] : undefined,
+      csrcList:
+        streamInfo.csrcId !== undefined ? [streamInfo.csrcId] : undefined,
     });
   }
 

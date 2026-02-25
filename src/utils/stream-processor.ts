@@ -33,7 +33,7 @@ export interface ResolvedStreamOptions {
  * applying consistent defaults across all processors.
  *
  * @param processorOptions Options from the processor caller
- * @param configOptions Options from the transport config (RtpConfig, SrtpConfig, etc.)
+ * @param configOptions Options from the transport config
  * @returns Resolved options with consistent defaults
  */
 export function resolveStreamOptions(
@@ -43,26 +43,36 @@ export function resolveStreamOptions(
     handleMetadata?: boolean;
     metadataCallback?: (metadata: LLMMetadata) => void;
     sendMetadataOverTransport?: boolean;
-  }
+  },
 ): ResolvedStreamOptions {
   return {
     processBackspaces:
-      processorOptions.processBackspaces ?? configOptions?.processBackspaces ?? false,
+      processorOptions.processBackspaces ??
+      configOptions?.processBackspaces ??
+      false,
     handleMetadata:
-      (processorOptions.handleMetadata ?? configOptions?.handleMetadata) !== false,
+      (processorOptions.handleMetadata ?? configOptions?.handleMetadata) !==
+      false,
     metadataCallback:
       processorOptions.metadataCallback ?? configOptions?.metadataCallback,
     onError: processorOptions.onError,
     sendMetadataOverTransport:
-      processorOptions.sendMetadataOverTransport ?? configOptions?.sendMetadataOverTransport ?? false,
+      processorOptions.sendMetadataOverTransport ??
+      configOptions?.sendMetadataOverTransport ??
+      false,
   };
 }
 
 /**
  * Type guard to detect AsyncIterable streams (modern LLM SDK streams).
  */
-function isAsyncIterable(stream: TextDataStream): stream is AsyncIterable<unknown> {
-  return stream != null && typeof (stream as any)[Symbol.asyncIterator] === 'function';
+function isAsyncIterable(
+  stream: TextDataStream,
+): stream is AsyncIterable<unknown> {
+  return (
+    stream != null &&
+    typeof (stream as any)[Symbol.asyncIterator] === 'function'
+  );
 }
 /**
  * Attach a stream to a transport via the shared processing pipeline.
@@ -76,7 +86,7 @@ function isAsyncIterable(stream: TextDataStream): stream is AsyncIterable<unknow
 export function attachStreamProcessor(
   stream: TextDataStream,
   options: ResolvedStreamOptions,
-  callbacks: StreamProcessorCallbacks
+  callbacks: StreamProcessorCallbacks,
 ): void {
   let textBuffer = '';
   if (isAsyncIterable(stream)) {
@@ -90,10 +100,13 @@ export function attachStreamProcessor(
             try {
               options.metadataCallback?.(metadata);
             } catch (_cbErr) {
-              // Prevent callback exceptions from crashing the stream pipeline
+              // Prevent callback exceptions from crashing pipeline
             }
 
-            if (options.sendMetadataOverTransport && callbacks.sendMetadata) {
+            if (
+              options.sendMetadataOverTransport
+              && callbacks.sendMetadata
+            ) {
               callbacks.sendMetadata(metadata);
             }
           }
@@ -103,12 +116,12 @@ export function attachStreamProcessor(
           let textToSend = text;
 
           if (options.processBackspaces) {
-            const { processedText, updatedBuffer } = processT140BackspaceChars(
+            const result = processT140BackspaceChars(
               text,
-              textBuffer
+              textBuffer,
             );
-            textBuffer = updatedBuffer;
-            textToSend = processedText;
+            textBuffer = result.updatedBuffer;
+            textToSend = result.processedText;
             if (!textToSend) continue;
           }
 
@@ -122,12 +135,16 @@ export function attachStreamProcessor(
         callbacks.close();
       } catch (err) {
         // Equivalent to 'error' event
-        options.onError?.(err instanceof Error ? err : new Error(String(err)));
+        const error = err instanceof Error
+          ? err : new Error(String(err));
+        options.onError?.(error);
         callbacks.close();
       }
     })().catch((err) => {
       // Defensive catch for unhandled promise rejections
-      options.onError?.(err instanceof Error ? err : new Error(String(err)));
+      const error = err instanceof Error
+        ? err : new Error(String(err));
+      options.onError?.(error);
       callbacks.close();
     });
     return;
@@ -142,10 +159,13 @@ export function attachStreamProcessor(
       try {
         options.metadataCallback?.(metadata);
       } catch (_cbErr) {
-        // Prevent callback exceptions from crashing the stream pipeline
+        // Prevent callback exceptions from crashing pipeline
       }
 
-      if (options.sendMetadataOverTransport && callbacks.sendMetadata) {
+      if (
+        options.sendMetadataOverTransport
+        && callbacks.sendMetadata
+      ) {
         callbacks.sendMetadata(metadata);
       }
     }
@@ -155,12 +175,12 @@ export function attachStreamProcessor(
     let textToSend = text;
 
     if (options.processBackspaces) {
-      const { processedText, updatedBuffer } = processT140BackspaceChars(
+      const result = processT140BackspaceChars(
         text,
-        textBuffer
+        textBuffer,
       );
-      textBuffer = updatedBuffer;
-      textToSend = processedText;
+      textBuffer = result.updatedBuffer;
+      textToSend = result.processedText;
       if (!textToSend) return;
     }
 
