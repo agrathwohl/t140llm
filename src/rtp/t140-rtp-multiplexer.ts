@@ -55,9 +55,11 @@ export class T140RtpMultiplexer extends EventEmitter {
   private transport: T140RtpTransport;
   private streams: Map<string, StreamInfo> = new Map();
   private multiplexConfig: RtpConfig;
-  private sendInterval: NodeJS.Timeout;
+  private drainTimer: NodeJS.Timeout | null = null;
   private lastSendTime: number = Date.now();
   private tokenBucket: number;
+  private charRateLimit: number;
+  private tokenRefillRate: number;
   private nextCsrcId: number = INITIAL_CSRC_ID;
 
   // Expose for testing purposes
@@ -97,58 +99,63 @@ export class T140RtpMultiplexer extends EventEmitter {
       this.emit('error', err);
     });
 
-    // Setup rate limiting for all streams combined
-    const charRateLimit =
+    this.charRateLimit =
       this.multiplexConfig.charRateLimit || DEFAULT_CHAR_RATE_LIMIT;
-    this.tokenBucket = charRateLimit;
-    const tokenRefillRate = charRateLimit / TOKEN_REFILL_RATE_DIVISOR;
+    this.tokenBucket = this.charRateLimit;
+    this.tokenRefillRate = this.charRateLimit / TOKEN_REFILL_RATE_DIVISOR;
+  }
 
-    // Start the shared send interval
-    this.sendInterval = setInterval(() => {
-      const now = Date.now();
-      const elapsedMs = now - this.lastSendTime;
-      this.lastSendTime = now;
+  private scheduleDrain(): void {
+    if (!this.drainTimer) {
+      this.flushQueues();
+    }
+  }
 
-      // Refill token bucket based on elapsed time
-      this.tokenBucket = Math.min(
-        charRateLimit,
-        this.tokenBucket + elapsedMs * tokenRefillRate
+  private flushQueues(): void {
+    this.drainTimer = null;
+
+    const now = Date.now();
+    const elapsedMs = now - this.lastSendTime;
+    this.lastSendTime = now;
+
+    this.tokenBucket = Math.min(
+      this.charRateLimit,
+      this.tokenBucket + elapsedMs * this.tokenRefillRate
+    );
+
+    if (this.streams.size > 0 && this.tokenBucket >= MIN_TOKEN_BUCKET_VALUE) {
+      const streamIds = Array.from(this.streams.keys());
+      const tokensPerStream = Math.max(
+        MIN_TOKENS_PER_STREAM,
+        Math.floor(this.tokenBucket / streamIds.length)
       );
 
-      // Process all streams in a round-robin fashion
-      if (this.streams.size > 0 && this.tokenBucket >= MIN_TOKEN_BUCKET_VALUE) {
-        // Get all stream IDs
-        const streamIds = Array.from(this.streams.keys());
+      for (const streamId of streamIds) {
+        const streamInfo = this.streams.get(streamId);
+        if (!streamInfo) continue;
 
-        // Calculate tokens per stream (minimum 1)
-        const tokensPerStream = Math.max(
-          MIN_TOKENS_PER_STREAM,
-          Math.floor(this.tokenBucket / streamIds.length)
-        );
+        if (streamInfo.charQueue.length > 0) {
+          const charsToSend = Math.min(
+            tokensPerStream,
+            streamInfo.charQueue.length
+          );
+          const textChunk = streamInfo.charQueue
+            .splice(0, charsToSend)
+            .join('');
 
-        // Process characters from each stream
-        for (const streamId of streamIds) {
-          const streamInfo = this.streams.get(streamId);
-          if (!streamInfo) continue;
-
-          if (streamInfo.charQueue.length > 0) {
-            const charsToSend = Math.min(
-              tokensPerStream,
-              streamInfo.charQueue.length
-            );
-            const textChunk = streamInfo.charQueue
-              .splice(0, charsToSend)
-              .join('');
-
-            if (textChunk) {
-              // Send with stream identifier
-              this._sendText(textChunk, streamInfo);
-              this.tokenBucket -= textChunk.length;
-            }
+          if (textChunk) {
+            this._sendText(textChunk, streamInfo);
+            this.tokenBucket -= textChunk.length;
           }
         }
       }
-    }, SEND_INTERVAL_MS);
+    }
+
+    const hasQueuedChars = Array.from(this.streams.values())
+      .some(s => s.charQueue.length > 0);
+    if (hasQueuedChars && !this.drainTimer) {
+      this.drainTimer = setTimeout(() => this.flushQueues(), SEND_INTERVAL_MS);
+    }
   }
 
   /**
@@ -291,9 +298,9 @@ export class T140RtpMultiplexer extends EventEmitter {
               }
             }
 
-            // Handle text content
             if (text) {
               streamInfo.charQueue.push(...toGraphemes(text));
+              this.scheduleDrain();
             }
           }
           // Stream exhausted — equivalent to 'end' event
@@ -334,9 +341,9 @@ export class T140RtpMultiplexer extends EventEmitter {
         }
       }
 
-      // Handle text content
       if (text) {
         streamInfo.charQueue.push(...toGraphemes(text));
+        this.scheduleDrain();
       }
     });
     stream.on('end', () => {
@@ -368,8 +375,10 @@ export class T140RtpMultiplexer extends EventEmitter {
    * Close the multiplexer and all streams
    */
   close(): void {
-    // Clear the send interval
-    clearInterval(this.sendInterval);
+    if (this.drainTimer) {
+      clearTimeout(this.drainTimer);
+      this.drainTimer = null;
+    }
 
     // Send any remaining characters from all streams
     for (const [_id, streamInfo] of this.streams.entries()) {

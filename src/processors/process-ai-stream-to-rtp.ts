@@ -32,8 +32,9 @@ export function attachStreamToRtpTransport(
   let lastSendTime = Date.now();
   let tokenBucket = charRateLimit;
   const tokenRefillRate = charRateLimit / TOKEN_REFILL_RATE_DIVISOR;
+  let drainTimer: NodeJS.Timeout | null = null;
 
-  const sendInterval = setInterval(() => {
+  function refillTokens(): void {
     const now = Date.now();
     const elapsedMs = now - lastSendTime;
     lastSendTime = now;
@@ -41,6 +42,11 @@ export function attachStreamToRtpTransport(
       charRateLimit,
       tokenBucket + elapsedMs * tokenRefillRate
     );
+  }
+
+  function flushQueue(): void {
+    drainTimer = null;
+    refillTokens();
 
     while (charQueue.length > 0 && tokenBucket >= MIN_TOKEN_BUCKET_VALUE) {
       const charsToSend = Math.min(Math.floor(tokenBucket), charQueue.length);
@@ -50,7 +56,12 @@ export function attachStreamToRtpTransport(
         tokenBucket -= textChunk.length;
       }
     }
-  }, SEND_INTERVAL_MS);
+
+    // If queue still has items (rate-limited), schedule next drain
+    if (charQueue.length > 0 && !drainTimer) {
+      drainTimer = setTimeout(flushQueue, SEND_INTERVAL_MS);
+    }
+  }
 
   const options = resolveStreamOptions(processorOptions, {
     processBackspaces: rtpConfig.processBackspaces,
@@ -61,14 +72,24 @@ export function attachStreamToRtpTransport(
   attachStreamProcessor(stream, options, {
     sendText: (text) => {
       charQueue.push(...toGraphemes(text));
+      if (!drainTimer) {
+        flushQueue();
+      }
     },
     onStreamEnd: () => {
+      if (drainTimer) {
+        clearTimeout(drainTimer);
+        drainTimer = null;
+      }
       if (charQueue.length > 0) {
         transport.sendText(charQueue.join(''));
       }
     },
     close: () => {
-      clearInterval(sendInterval);
+      if (drainTimer) {
+        clearTimeout(drainTimer);
+        drainTimer = null;
+      }
       transport.close();
     },
   });
