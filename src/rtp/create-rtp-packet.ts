@@ -35,9 +35,7 @@ export function createRtpPacket(
   const csrcList = options.csrcList || [];
   const csrcCount = csrcList.length;
 
-  // Set marker bit to 1 for metadata packets to distinguish them
-  // This allows receivers to identify metadata packets vs regular text
-  const marker = options.metadataPacket ? 1 : 0;
+  const marker = (options.markerBit || options.metadataPacket) ? 1 : 0;
 
   // Use metadata payload type if provided and this is a metadata packet
   const payloadType =

@@ -71,9 +71,11 @@ export function createWebSocketServer(options: WebSocketServerOptions = {}): Web
     debug(`WebSocket server is running on ws://localhost:${port}`);
   }
 
-  // Set up connection handler
-  server.on('connection', (ws) => {
-    // Create Unix SEQPACKET socket with proper connection and error handling
+  server.on('connection', (ws, req) => {
+    if (req.socket) {
+      req.socket.setNoDelay(true);
+    }
+
     const seqpacketSocket = net.createConnection(SEQPACKET_SOCKET_PATH);
 
     let sequenceNumber = 0;

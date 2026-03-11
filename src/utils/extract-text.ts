@@ -12,11 +12,10 @@ export interface ExtractedContent {
  * Helper function to extract text content from various stream data formats
  * and detect any metadata like tool calls
  */
-export function extractTextFromChunk(chunk: any): ExtractedContent {
+export function extractTextFromChunk(chunk: any, extractMetadata: boolean = true): ExtractedContent {
   const result: ExtractedContent = { text: '' };
 
-  // Extract metadata from OpenAI tool calls
-  if (chunk?.choices?.[0]?.delta?.tool_calls) {
+  if (extractMetadata && chunk?.choices?.[0]?.delta?.tool_calls) {
     const toolCall = chunk.choices[0].delta.tool_calls[0];
     result.metadata = {
       type: 'tool_call',
@@ -25,8 +24,7 @@ export function extractTextFromChunk(chunk: any): ExtractedContent {
     };
   }
 
-  // Extract metadata from Anthropic tool calls (Claude 3.5+)
-  if (chunk?.delta?.tool_use) {
+  if (extractMetadata && chunk?.delta?.tool_use) {
     result.metadata = {
       type: 'tool_call',
       id: chunk.delta.tool_use.id || undefined,
@@ -34,8 +32,7 @@ export function extractTextFromChunk(chunk: any): ExtractedContent {
     };
   }
 
-  // Extract metadata from Mistral AI tool calls (similar to OpenAI format)
-  if (chunk?.delta?.tool_calls) {
+  if (extractMetadata && chunk?.delta?.tool_calls) {
     const toolCall = chunk.delta.tool_calls[0];
     result.metadata = {
       type: 'tool_call',
@@ -44,8 +41,7 @@ export function extractTextFromChunk(chunk: any): ExtractedContent {
     };
   }
 
-  // Extract metadata from Cohere tool calls
-  if (chunk?.tool_calls) {
+  if (extractMetadata && chunk?.tool_calls) {
     const toolCall = chunk.tool_calls[0];
     result.metadata = {
       type: 'tool_call',
@@ -54,8 +50,7 @@ export function extractTextFromChunk(chunk: any): ExtractedContent {
     };
   }
 
-  // Extract metadata from Google Gemini tool calls
-  if (chunk?.candidates?.[0]?.content?.parts?.[0]?.functionCall) {
+  if (extractMetadata && chunk?.candidates?.[0]?.content?.parts?.[0]?.functionCall) {
     const toolCall = chunk.candidates[0].content.parts[0].functionCall;
     result.metadata = {
       type: 'tool_call',
@@ -64,8 +59,7 @@ export function extractTextFromChunk(chunk: any): ExtractedContent {
     };
   }
 
-  // Extract metadata from Anthropic tool results (tool_results)
-  if (chunk?.type === 'tool_result' || chunk?.delta?.type === 'tool_result') {
+  if (extractMetadata && (chunk?.type === 'tool_result' || chunk?.delta?.type === 'tool_result')) {
     result.metadata = {
       type: 'tool_result',
       id: (chunk.id || chunk.delta?.id) || undefined,
@@ -73,16 +67,14 @@ export function extractTextFromChunk(chunk: any): ExtractedContent {
     };
   }
 
-  // Extract reasoning from LLM responses
-  if (chunk?.choices?.[0]?.delta?.reasoning || chunk?.delta?.reasoning) {
+  if (extractMetadata && (chunk?.choices?.[0]?.delta?.reasoning || chunk?.delta?.reasoning)) {
     result.metadata = {
       type: 'reasoning',
       content: chunk?.choices?.[0]?.delta?.reasoning || chunk?.delta?.reasoning,
     };
   }
 
-  // Extract reasoning for OpenAI specifically in message format
-  if (chunk?.choices?.[0]?.message?.role === 'assistant' &&
+  if (extractMetadata && chunk?.choices?.[0]?.message?.role === 'assistant' &&
       chunk?.choices?.[0]?.message?.reasoning) {
     result.metadata = {
       type: 'reasoning',
@@ -90,8 +82,7 @@ export function extractTextFromChunk(chunk: any): ExtractedContent {
     };
   }
 
-  // Extract custom metadata if present
-  if (chunk?.metadata || chunk?.delta?.metadata) {
+  if (extractMetadata && (chunk?.metadata || chunk?.delta?.metadata)) {
     result.metadata = {
       type: 'custom',
       content: chunk.metadata || chunk.delta?.metadata,

@@ -25,6 +25,10 @@ export function attachStreamToWebSocket(
   let buffer = '';
 
   ws.on('open', () => {
+    const sock = (ws as any)._socket;
+    if (sock && typeof sock.setNoDelay === 'function') {
+      sock.setNoDelay(true);
+    }
     if (buffer) {
       const dataToSend = buffer;
       buffer = '';

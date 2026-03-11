@@ -6,6 +6,7 @@ import { BACKSPACE } from './constants';
 export interface T140BackspaceResult {
   processedText: string;
   updatedBuffer: string;
+  processedGraphemes: string[];
 }
 
 /**
@@ -44,31 +45,29 @@ export function processT140BackspaceChars(
   textBuffer: string = ''
 ): T140BackspaceResult {
   if (!text.includes(BACKSPACE) && textBuffer === '') {
-    // Fast path: no backspaces and no existing buffer - text becomes the new buffer
-    return { processedText: text, updatedBuffer: text };
+    const graphemes = toGraphemes(text);
+    return { processedText: text, updatedBuffer: text, processedGraphemes: graphemes };
   }
 
-  let processedText = '';
-  // Convert buffer to grapheme array for proper Unicode handling
   const bufferGraphemes = toGraphemes(textBuffer);
-
-  // Process input by grapheme clusters
   const inputGraphemes = toGraphemes(text);
+  const processedGraphemes: string[] = [];
 
   for (const grapheme of inputGraphemes) {
     if (grapheme === BACKSPACE) {
-      // Handle backspace by removing the last grapheme cluster from the buffer
       if (bufferGraphemes.length > 0) {
         bufferGraphemes.pop();
-        // Add backspace to the processed text to be sent
-        processedText += BACKSPACE;
+        processedGraphemes.push(BACKSPACE);
       }
     } else {
-      // Add normal grapheme to both buffer and processed text
       bufferGraphemes.push(grapheme);
-      processedText += grapheme;
+      processedGraphemes.push(grapheme);
     }
   }
 
-  return { processedText, updatedBuffer: bufferGraphemes.join('') };
+  return {
+    processedText: processedGraphemes.join(''),
+    updatedBuffer: bufferGraphemes.join(''),
+    processedGraphemes,
+  };
 }
