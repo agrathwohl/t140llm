@@ -93,6 +93,10 @@ export function createT140SrtpTransport(
   const transport = new T140RtpTransport(remoteAddress, remotePort, srtpConfig);
   transport.setupSrtp(srtpConfig);
 
+  if (srtpConfig.bomPrewarm) {
+    transport.sendText('\uFEFF', { markerBit: true });
+  }
+
   const attachStream = (
     stream: TextDataStream,
     processorOptions: ProcessorOptions = {}

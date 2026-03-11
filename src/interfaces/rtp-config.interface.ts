@@ -31,4 +31,6 @@ export interface RtpConfig {
   streamIdentifier?: string; // Unique identifier for this stream in a multiplex
   csrcList?: number[]; // Contributing source identifiers
   useCsrcForStreamId?: boolean; // Use CSRC field for stream identification
+  markerBit?: boolean; // Set RTP marker bit (RFC 4103 §5.1 M-bit for first packet after idle)
+  bomPrewarm?: boolean; // Send BOM (U+FEFF) on transport creation to open NAT pinholes (RFC 4103)
 }

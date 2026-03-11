@@ -329,7 +329,8 @@ export class T140RtpTransport extends EventEmitter {
    */
   private _createRedPacket(
     primaryData: string,
-    redundantPackets: Buffer[]
+    redundantPackets: Buffer[],
+    markerBit?: boolean
   ): Buffer {
     if (!this.config.redEnabled || redundantPackets.length === 0) {
       // If RED is not enabled or no redundant packets available,
@@ -353,7 +354,7 @@ export class T140RtpTransport extends EventEmitter {
     const padding = 0;
     const extension = 0;
     const csrcCount = 0;
-    const marker = 0;
+    const marker = markerBit ? 1 : 0;
     const payloadType = this.config.redPayloadType!;
     const ssrc = this.config.ssrc!;
 
@@ -449,7 +450,7 @@ export class T140RtpTransport extends EventEmitter {
     let packet: Buffer;
     if (packetOptions.redEnabled && this.redPackets.length > 0) {
       // Create a RED packet with redundancy
-      const redPacket = this._createRedPacket(text, this.redPackets);
+      const redPacket = this._createRedPacket(text, this.redPackets, packetOptions.markerBit);
 
       // Store the packet for future redundancy use
       const normalPacket = createRtpPacket(this.seqNum, this.timestamp, text, {
@@ -459,6 +460,7 @@ export class T140RtpTransport extends EventEmitter {
         streamIdentifier: packetOptions.streamIdentifier,
         csrcList: packetOptions.csrcList,
         useCsrcForStreamId: packetOptions.useCsrcForStreamId,
+        markerBit: packetOptions.markerBit,
       });
 
       // Keep original non-RED packet for redundancy
@@ -479,6 +481,7 @@ export class T140RtpTransport extends EventEmitter {
         streamIdentifier: packetOptions.streamIdentifier,
         csrcList: packetOptions.csrcList,
         useCsrcForStreamId: packetOptions.useCsrcForStreamId,
+        markerBit: packetOptions.markerBit,
       });
 
       // Store for future redundancy use if RED is enabled
