@@ -52,22 +52,18 @@ export function createStegT140RtpTransport(
   remotePort: number = DEFAULT_RTP_PORT,
   config: RtpConfigWithSteg = {}
 ): T140RtpTransport {
-  // Use the provided transport or create a default UDP transport
   let transport: TransportStream = config.customTransport ||
     createDefaultTransport(remoteAddress, remotePort);
 
-  // If steganography is enabled, wrap the transport with StegTransport
   if (config.steganography?.enabled) {
     transport = new StegTransport(transport, config.steganography);
   }
 
-  // Create a new config with the steganography transport
   const rtpConfig: RtpConfig = {
     ...config,
     customTransport: transport,
   };
 
-  // Create and return the RTP transport
   return new T140RtpTransport(remoteAddress, remotePort, rtpConfig);
 }
 
@@ -90,14 +86,12 @@ export function processAIStreamToStegRtp(
   config: RtpConfigWithSteg = {}
 ): T140RtpTransport {
 
-  // Create the steganography transport
   const transport = createStegT140RtpTransport(
     remoteAddress,
     remotePort,
     config
   );
 
-  // Process the stream using the pre-created steganography transport
   processAIStreamToRtp(stream, remoteAddress, remotePort, {
     ...config,
     customTransport: transport,

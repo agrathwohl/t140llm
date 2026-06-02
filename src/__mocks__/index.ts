@@ -1,6 +1,5 @@
 import { EventEmitter } from 'events';
 
-// Constants
 const RTP_HEADER_SIZE = 12;
 const DEFAULT_T140_PAYLOAD_TYPE = 96;
 const DEFAULT_SSRC = 12345;
@@ -22,20 +21,17 @@ const RTP_OFFSET_SEQUENCE = 2;     // Bytes 2-3: Sequence number
 const RTP_OFFSET_TIMESTAMP = 4;    // Bytes 4-7: Timestamp
 const RTP_OFFSET_SSRC = 8;         // Bytes 8-11: SSRC
 
-// Interface for any streaming data source
 interface TextDataStream extends EventEmitter {
   on(event: 'data', listener: (data: any) => void): this;
   on(event: 'end', listener: () => void): this;
   on(event: 'error', listener: (error: Error) => void): this;
 }
 
-// Interface for custom transport streams
 interface TransportStream {
   send(data: Buffer, callback?: (error?: Error) => void): void;
   close?(): void;
 }
 
-// Interface for RTP/SRTP configuration
 interface RtpConfig {
   payloadType?: number;
   ssrc?: number;
@@ -53,7 +49,6 @@ interface RtpConfig {
   customTransport?: TransportStream;
 }
 
-// Interface for SRTP specific configuration
 interface SrtpConfig extends RtpConfig {
   masterKey: Buffer;
   masterSalt: Buffer;
@@ -170,7 +165,6 @@ class T140RtpTransport extends EventEmitter {
 
     this._sendPacket(packet);
 
-    // Update sequence number and timestamp
     this.seqNum = (this.seqNum + 1) % RTP_MAX_SEQUENCE_NUMBER;
     this.timestamp = this.timestamp + this.config.timestampIncrement!;
   });
@@ -191,11 +185,10 @@ class T140RtpTransport extends EventEmitter {
     public remotePort: number = DEFAULT_RTP_PORT,
     config: RtpConfig = {}
   ) {
-    super(); // Initialize EventEmitter
+    super();
 
     this.customTransport = config.customTransport;
 
-    // Only validate remoteAddress if no custom transport is provided
     if (!this.customTransport && !remoteAddress) {
       throw new Error(
         'Remote address is required when no custom transport is provided'
@@ -274,7 +267,6 @@ const processAIStream = jest.fn().mockImplementation(
     _options?: any,
     existingConnection?: any
   ) => {
-    // If existingConnection provided, use it directly
     if (existingConnection) {
       stream.on('data', (chunk) => {
         const text = extractTextFromChunk(chunk);
@@ -294,7 +286,6 @@ const processAIStream = jest.fn().mockImplementation(
       return existingConnection;
     }
 
-    // Return a mock WebSocket
     const mockWs: any = new EventEmitter();
     mockWs.send = jest.fn();
     mockWs.close = jest.fn();
@@ -313,7 +304,6 @@ const processAIStreamToRtp = jest
       rtpConfig?: RtpConfig,
       existingTransport?: T140RtpTransport
     ) => {
-      // If existingTransport provided, use it directly
       if (existingTransport) {
         stream.on('data', (chunk) => {
           const text = extractTextFromChunk(chunk);
@@ -337,25 +327,23 @@ const processAIStreamToRtp = jest
         rtpConfig
       );
 
-      // Set up a mock interval for rate limiting
       const sendInterval = createMockInterval(() => {
         // This would normally handle rate-limited sending but for tests
         // we just want to trigger sending immediately
       }, 100);
 
-      // Set up the event handlers directly in the mock
       stream.on('data', (chunk) => {
         const text = extractTextFromChunk(chunk);
         if (text) transport.sendText(text);
       });
 
       stream.on('end', () => {
-        clearTimeout(sendInterval); // Clear the mock interval
+        clearTimeout(sendInterval);
         transport.close();
       });
 
       stream.on('error', () => {
-        clearTimeout(sendInterval); // Clear the mock interval
+        clearTimeout(sendInterval);
         transport.close();
       });
 
@@ -376,7 +364,6 @@ const processAIStreamToSrtp = jest
       // Validate SRTP config before any operations (fail fast)
       validateSrtpConfig(srtpConfig);
 
-      // If existingTransport provided, use it directly
       if (existingTransport) {
         existingTransport.setupSrtp(srtpConfig);
 
@@ -403,7 +390,6 @@ const processAIStreamToSrtp = jest
       );
       transport.setupSrtp(srtpConfig);
 
-      // Set up the event handlers
       stream.on('data', (chunk) => {
         const text = extractTextFromChunk(chunk);
         if (text) transport.sendText(text);
@@ -430,12 +416,10 @@ const processAIStreamToDirectSocket = jest
       rtpConfig?: RtpConfig,
       existingTransport?: TransportStream
     ) => {
-      // If existingTransport provided, use it directly
       if (existingTransport) {
         stream.on('data', (chunk) => {
           const text = extractTextFromChunk(chunk);
           if (text) {
-            // Create an RTP packet and send through existing transport
             const packet = createRtpPacket(0, 0, text, {
               payloadType: rtpConfig?.payloadType,
               ssrc: rtpConfig?.ssrc,
@@ -455,15 +439,12 @@ const processAIStreamToDirectSocket = jest
         return existingTransport;
       }
 
-      // If a custom transport is provided in config, use it
       if (rtpConfig?.customTransport) {
         const customTransport = rtpConfig.customTransport;
 
-        // Set up the event handlers directly in the mock
         stream.on('data', (chunk) => {
           const text = extractTextFromChunk(chunk);
           if (text) {
-            // Create an RTP packet and send through custom transport
             const packet = createRtpPacket(0, 0, text, {
               payloadType: rtpConfig.payloadType,
               ssrc: rtpConfig.ssrc,
@@ -482,12 +463,10 @@ const processAIStreamToDirectSocket = jest
 
         return customTransport;
       }
-      // Return a mock socket
       const mockSocket: any = new EventEmitter();
       mockSocket.write = jest.fn();
       mockSocket.end = jest.fn();
 
-      // Set up the event handlers directly in the mock
       stream.on('data', (chunk) => {
         const text = extractTextFromChunk(chunk);
         if (text) mockSocket.write(text);

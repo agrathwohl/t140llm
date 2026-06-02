@@ -22,7 +22,6 @@ export interface DemultiplexedData {
 export interface DemultiplexedStream extends EventEmitter {
   streamId: string;
 
-  // Events
   on(event: 'data', listener: (text: string) => void): this;
   on(event: 'metadata', listener: (metadata: LLMMetadata) => void): this;
   on(event: 'end', listener: () => void): this;
@@ -37,7 +36,6 @@ export class DemultiplexedStreamImpl extends EventEmitter implements Demultiplex
     super();
   }
 
-  // Methods to push data into the stream
   pushText(text: string): void {
     this.emit('data', text);
   }
@@ -80,12 +78,10 @@ export class T140StreamDemultiplexer extends EventEmitter {
     try {
       let streamId: string | undefined;
       if (useCSRC) {
-        // Read the first byte of the RTP header
         const firstByte = data[0];
         // Extract CSRC count (CC field, bottom 4 bits per RFC 3550)
         const csrcCount = firstByte & 0x0F;
         if (csrcCount > 0) {
-          // Read the first CSRC as stream identifier
           // CSRC identifiers start at byte 12 in the RTP header per RFC 3550
           const csrcId = data.readUInt32BE(RTP_OFFSET_CSRC);
           streamId = `csrc:${csrcId}`;
@@ -99,7 +95,6 @@ export class T140StreamDemultiplexer extends EventEmitter {
         this.emit('error', new Error('No CSRC identifiers found in packet'));
         return;
       }
-      // Using prefix-based identification
       // Calculate dynamic RTP header size per RFC 3550
       const firstByte = data[0];
       const csrcCount = firstByte & 0x0F;
@@ -107,10 +102,8 @@ export class T140StreamDemultiplexer extends EventEmitter {
       const payloadWithPrefix = data.slice(headerSize);
       const payloadStr = payloadWithPrefix.toString('utf-8');
       if (payloadStr.startsWith('MD:')) {
-        // This is a metadata packet
         const metadataContent = payloadStr.substring(3);
         try {
-          // Attempt to parse as JSON
           const metadata = JSON.parse(metadataContent);
           if (metadata.streamId) {
             this._processMetadata(metadata.streamId, metadata);
@@ -159,10 +152,8 @@ export class T140StreamDemultiplexer extends EventEmitter {
   private _processText(streamId: string, text: string): void {
     const stream = this._getOrCreateStream(streamId);
 
-    // Push the text to the stream
     stream.pushText(text);
 
-    // Emit demultiplexed data event
     this.emit('data', {
       streamId,
       text,
@@ -175,10 +166,8 @@ export class T140StreamDemultiplexer extends EventEmitter {
   private _processMetadata(streamId: string, metadata: LLMMetadata): void {
     const stream = this._getOrCreateStream(streamId);
 
-    // Push the metadata to the stream
     stream.pushMetadata(metadata);
 
-    // Emit demultiplexed data event
     this.emit('data', {
       streamId,
       metadata,

@@ -81,20 +81,17 @@ export class T140RtpMultiplexer extends EventEmitter {
   ) {
     super();
 
-    // Ensure multiplexing is enabled in config
     this.multiplexConfig = {
       ...multiplexConfig,
       multiplexEnabled: true,
     };
 
-    // Create the shared transport
     this.transport = new T140RtpTransport(
       remoteAddress,
       remotePort,
       this.multiplexConfig
     );
 
-    // Forward transport errors
     this.transport.on('error', (err: T140RtpError) => {
       this.emit('error', err);
     });
@@ -173,7 +170,6 @@ export class T140RtpMultiplexer extends EventEmitter {
     streamConfig: RtpConfig = {},
     processorOptions: ProcessorOptions = {}
   ): boolean {
-    // Check if stream with this ID already exists
     if (this.streams.has(id)) {
       this.emit(
         'error',
@@ -184,14 +180,12 @@ export class T140RtpMultiplexer extends EventEmitter {
       return false;
     }
 
-    // Assign a CSRC ID for this stream if using CSRC for identification
     let csrcId;
     if (this.multiplexConfig.useCsrcForStreamId) {
       csrcId = this.nextCsrcId;
       this.nextCsrcId += 1;
     }
 
-    // Combine configurations with stream-specific overrides
     const config: RtpConfig = {
       ...this.multiplexConfig,
       ...streamConfig,
@@ -199,12 +193,10 @@ export class T140RtpMultiplexer extends EventEmitter {
       multiplexEnabled: true,
     };
 
-    // If using CSRC for stream ID, add to CSRC list
     if (csrcId !== undefined) {
       config.csrcList = [csrcId];
     }
 
-    // Create stream info
     const processOptions = {
       ...processorOptions,
       handleMetadata:
@@ -225,13 +217,10 @@ export class T140RtpMultiplexer extends EventEmitter {
       ssrc: config.ssrc || this.multiplexConfig.ssrc || 0,
     };
 
-    // Set up event handlers for this stream
     this._setupStreamHandlers(streamInfo);
 
-    // Add to streams map
     this.streams.set(id, streamInfo);
 
-    // Emit event
     this.emit('streamAdded', id);
 
     return true;
@@ -249,7 +238,6 @@ export class T140RtpMultiplexer extends EventEmitter {
       return false;
     }
 
-    // Remove all listeners from the stream
     if (streamInfo.stream instanceof EventEmitter) {
       streamInfo.stream.removeAllListeners();
     }
@@ -260,10 +248,8 @@ export class T140RtpMultiplexer extends EventEmitter {
       this._sendText(textChunk, streamInfo);
     }
 
-    // Remove from streams map
     this.streams.delete(id);
 
-    // Emit event
     this.emit('streamRemoved', id);
 
     return true;
@@ -281,7 +267,6 @@ export class T140RtpMultiplexer extends EventEmitter {
           for await (const chunk of stream) {
             const { text, metadata } = extractTextFromChunk(chunk);
 
-            // Handle metadata if enabled
             if (metadata && options.handleMetadata) {
               const metadataWithStreamId = {
                 ...metadata,
@@ -324,7 +309,6 @@ export class T140RtpMultiplexer extends EventEmitter {
     stream.on('data', (chunk) => {
       const { text, metadata } = extractTextFromChunk(chunk);
 
-      // Handle metadata if enabled
       if (metadata && options.handleMetadata) {
         const metadataWithStreamId = {
           ...metadata,
@@ -387,16 +371,13 @@ export class T140RtpMultiplexer extends EventEmitter {
         this._sendText(textChunk, streamInfo);
       }
 
-      // Remove all listeners
       if (streamInfo.stream instanceof EventEmitter) {
         streamInfo.stream.removeAllListeners();
       }
     }
 
-    // Clear streams map
     this.streams.clear();
 
-    // Close the transport
     this.transport.close();
   }
 

@@ -109,15 +109,13 @@ export class T140RtpTransport extends EventEmitter {
     remotePort: number = DEFAULT_RTP_PORT,
     config: RtpConfig = {}
   ) {
-    super(); // Initialize EventEmitter
+    super();
 
-    // Store custom transport if provided
     this.customTransport = config.customTransport;
 
     // If a custom transport is provided, we don't need to validate address and port
     // but we still store them for compatibility
     if (!this.customTransport) {
-      // Validate remote address
       if (!remoteAddress) {
         throw new Error(
           'Remote address is required when no custom transport is provided'
@@ -135,7 +133,6 @@ export class T140RtpTransport extends EventEmitter {
         throw new Error('Invalid remote address format');
       }
 
-      // Validate port number is within valid range
       if (remotePort < 0 || remotePort > 65535) {
         throw new Error('Port number must be between 0 and 65535');
       }
@@ -143,7 +140,6 @@ export class T140RtpTransport extends EventEmitter {
 
     this.remoteAddress = remoteAddress;
     this.remotePort = remotePort;
-    // Generate a secure random SSRC if not provided
     const secureSSRC = generateSecureSSRC();
 
     this.config = {
@@ -166,12 +162,10 @@ export class T140RtpTransport extends EventEmitter {
     this.seqNum = this.config.initialSequenceNumber!;
     this.timestamp = this.config.initialTimestamp!;
 
-    // Create UDP socket only if no custom transport is provided
     if (!this.customTransport) {
       try {
         this.udpSocket = dgram.createSocket('udp4');
 
-        // Set up UDP socket error handler
         this.udpSocket.on('error', (err) => {
           this.emit('error', ErrorFactory.NETWORK('UDP socket error', err));
         });
@@ -186,7 +180,6 @@ export class T140RtpTransport extends EventEmitter {
    */
   setupSrtp(srtpConfig: SrtpConfig): void {
     try {
-      // Validate required keys
       if (!srtpConfig.masterKey || !srtpConfig.masterSalt) {
         this.emit('error', ErrorFactory.INVALID_CONFIG(
           'SRTP configuration missing required master key or salt'
@@ -194,7 +187,6 @@ export class T140RtpTransport extends EventEmitter {
         return;
       }
 
-      // Create SRTP session with key material
       // Profile 1 = SRTP_AES128_CM_HMAC_SHA1_80 (default)
       this.srtpSession = new SrtpSession({
         keys: {
@@ -229,7 +221,6 @@ export class T140RtpTransport extends EventEmitter {
       return Buffer.alloc(0);
     }
 
-    // Verify that all array lengths match
     if (
       packets.length !== sequenceNumbers.length ||
       packets.length !== timestamps.length
@@ -255,7 +246,6 @@ export class T140RtpTransport extends EventEmitter {
     // Use the highest timestamp for the FEC packet
     const fecTimestamp = Math.max(...timestamps);
 
-    // Create the FEC RTP header
     const fecHeader = Buffer.alloc(RTP_HEADER_SIZE);
     fecHeader.writeUInt8(
       version * BIT_SHIFT_64 + padding * BIT_SHIFT_32 + extension * BIT_SHIFT_16 + csrcCount,
@@ -332,22 +322,17 @@ export class T140RtpTransport extends EventEmitter {
     redundantPackets: Buffer[]
   ): Buffer {
     if (!this.config.redEnabled || redundantPackets.length === 0) {
-      // If RED is not enabled or no redundant packets available,
-      // just create a normal RTP packet
       return createRtpPacket(this.seqNum, this.timestamp, primaryData, {
         payloadType: this.config.payloadType,
         ssrc: this.config.ssrc,
       });
     }
 
-    // Determine how many redundant packets to include
-    // Limited by available packets and configured redundancy level
     const redundancyLevel = Math.min(
       redundantPackets.length,
       this.config.redundancyLevel || DEFAULT_REDUNDANCY_LEVEL
     );
 
-    // Start with RTP header
     const rtpHeader = Buffer.alloc(RTP_HEADER_SIZE);
     const version = RTP_VERSION;
     const padding = 0;
@@ -357,7 +342,6 @@ export class T140RtpTransport extends EventEmitter {
     const payloadType = this.config.redPayloadType!;
     const ssrc = this.config.ssrc!;
 
-    // Create RTP header
     rtpHeader.writeUInt8(
       version * BIT_SHIFT_64 + padding * BIT_SHIFT_32 + extension * BIT_SHIFT_16 + csrcCount,
       RTP_OFFSET_VERSION
@@ -382,20 +366,15 @@ export class T140RtpTransport extends EventEmitter {
 
     // Add headers for redundant blocks
     for (let i = 0; i < redundancyLevel; i += 1) {
-      // Get the packet to include as redundant data
       // Most recent redundant packet first
       const packet = redundantPackets[redundantPackets.length - 1 - i];
 
-      // Calculate timestamp offset (primary timestamp - redundant timestamp)
-      // We need to extract the timestamp from the RTP header
       const redPacketTimestamp = packet.readUInt32BE(RTP_OFFSET_TIMESTAMP);
       // 16-bit value using modulo instead of bitwise AND
       const timestampOffset = (this.timestamp - redPacketTimestamp) % RTP_MAX_SEQUENCE_NUMBER;
 
-      // Calculate payload length (packet length - RTP header size)
       const payloadLength = Math.min(packet.length - RTP_HEADER_SIZE, RED_MAX_BLOCK_LENGTH);
 
-      // Write RED header for this block
       // F bit = 1 (more blocks follow)
       redHeaders.writeUInt8(
         RED_F_BIT_FLAG + this.config.payloadType!,
@@ -415,10 +394,8 @@ export class T140RtpTransport extends EventEmitter {
     // Add header for primary data (F bit = 0, no timestamp offset, no length)
     redHeaders.writeUInt8(this.config.payloadType!, offset); // F=0 + block PT
 
-    // Create primary data payload
     const primaryPayload = Buffer.from(primaryData, 'utf-8');
 
-    // Combine all parts: RTP header + RED headers + redundant payloads + primary payload
     const buffers = [rtpHeader, redHeaders];
 
     // Add redundant payloads (skipping their RTP headers)
@@ -428,10 +405,8 @@ export class T140RtpTransport extends EventEmitter {
       buffers.push(payload);
     }
 
-    // Add primary payload
     buffers.push(primaryPayload);
 
-    // Combine all buffers
     return Buffer.concat(buffers);
   }
 
@@ -445,11 +420,17 @@ export class T140RtpTransport extends EventEmitter {
     // Apply options as overrides to the config for this packet
     const packetOptions = options ? { ...this.config, ...options } : this.config;
 
-    // Check if we should use RED (redundancy) encoding
     let packet: Buffer;
     if (packetOptions.redEnabled && this.redPackets.length > 0) {
+<<<<<<< Updated upstream
       // Create a RED packet with redundancy
       const redPacket = this._createRedPacket(text, this.redPackets);
+||||||| Stash base
+      // Create a RED packet with redundancy
+      const redPacket = this._createRedPacket(text, this.redPackets, packetOptions.markerBit);
+=======
+      const redPacket = this._createRedPacket(text, this.redPackets, packetOptions.markerBit);
+>>>>>>> Stashed changes
 
       // Store the packet for future redundancy use
       const normalPacket = createRtpPacket(this.seqNum, this.timestamp, text, {
@@ -464,14 +445,12 @@ export class T140RtpTransport extends EventEmitter {
       // Keep original non-RED packet for redundancy
       this.redPackets.push(Buffer.from(normalPacket));
 
-      // Limit the number of stored packets
       if (this.redPackets.length > packetOptions.redundancyLevel!) {
-        this.redPackets.shift(); // Remove oldest packet
+        this.redPackets.shift();
       }
 
       packet = redPacket;
     } else {
-      // Create normal RTP packet
       const rtpPacket = createRtpPacket(this.seqNum, this.timestamp, text, {
         payloadType: packetOptions.payloadType,
         ssrc: packetOptions.ssrc,
@@ -485,16 +464,14 @@ export class T140RtpTransport extends EventEmitter {
       if (packetOptions.redEnabled) {
         this.redPackets.push(Buffer.from(rtpPacket));
 
-        // Limit the number of stored packets
         if (this.redPackets.length > packetOptions.redundancyLevel!) {
-          this.redPackets.shift(); // Remove oldest packet
+          this.redPackets.shift();
         }
       }
 
       packet = rtpPacket;
     }
 
-    // Encrypt the packet if using SRTP
     let finalPacket: Buffer;
     try {
       if (this.srtpSession) {
@@ -512,7 +489,6 @@ export class T140RtpTransport extends EventEmitter {
       return;
     }
 
-    // Send the packet using either the custom transport or UDP socket
     this._sendPacket(finalPacket, (err) => {
       if (err) {
         this.emit('error', ErrorFactory.NETWORK('Failed to send RTP packet', err));
@@ -524,23 +500,20 @@ export class T140RtpTransport extends EventEmitter {
       // Reuse the packet already created above instead of creating a duplicate
       // In the RED branch, normalPacket was created; in the non-RED branch, rtpPacket was.
       // We use the pre-encryption `packet` variable which is the correct RTP packet.
-      this.packetBuffer.push(Buffer.from(packet)); // Make a copy of the packet
+      this.packetBuffer.push(Buffer.from(packet));
       this.packetSequenceNumbers.push(this.seqNum);
       this.packetTimestamps.push(this.timestamp);
       this.fecCounter += 1;
 
       // Check if we've reached the group size to send an FEC packet
       if (this.fecCounter >= this.config.fecGroupSize!) {
-        // Create and send FEC packet
         const fecPacket = this._createFecPacket(
           this.packetBuffer,
           this.packetSequenceNumbers,
           this.packetTimestamps
         );
 
-        // Only send if we have a valid FEC packet
         if (fecPacket.length > 0) {
-          // Encrypt the FEC packet if using SRTP
           let finalFecPacket: Buffer;
           try {
             if (this.srtpSession) {
@@ -558,7 +531,6 @@ export class T140RtpTransport extends EventEmitter {
             return;
           }
 
-          // Send the FEC packet
           this._sendPacket(finalFecPacket, (err) => {
             if (err) {
               this.emit('error', ErrorFactory.NETWORK('Failed to send FEC packet', err));
@@ -566,7 +538,6 @@ export class T140RtpTransport extends EventEmitter {
           });
         }
 
-        // Reset FEC counters and buffers
         this.fecCounter = 0;
         this.packetBuffer = [];
         this.packetSequenceNumbers = [];
@@ -574,7 +545,6 @@ export class T140RtpTransport extends EventEmitter {
       }
     }
 
-    // Update sequence number and timestamp for next packet
     // Use modulo to keep within 16-bit range
     this.seqNum = (this.seqNum + 1) % RTP_MAX_SEQUENCE_NUMBER;
     this.timestamp = (this.timestamp + this.config.timestampIncrement!) >>> 0;
@@ -588,10 +558,8 @@ export class T140RtpTransport extends EventEmitter {
     callback?: (error?: Error) => void
   ): void {
     if (this.customTransport) {
-      // Use the custom transport
       this.customTransport.send(packet, callback);
     } else if (this.udpSocket) {
-      // Use the UDP socket
       this.udpSocket.send(
         packet,
         0,
@@ -622,7 +590,6 @@ export class T140RtpTransport extends EventEmitter {
     );
 
     if (fecPacket.length > 0) {
-      // Encrypt the FEC packet if using SRTP
       let finalFecPacket: Buffer;
       try {
         if (this.srtpSession) {
@@ -640,7 +607,6 @@ export class T140RtpTransport extends EventEmitter {
         return;
       }
 
-      // Send the FEC packet using the appropriate transport
       this._sendPacket(finalFecPacket, (err) => {
         if (err) {
           this.emit('error', ErrorFactory.NETWORK('Failed to send final FEC packet', err));
@@ -648,7 +614,6 @@ export class T140RtpTransport extends EventEmitter {
       });
     }
 
-    // Clear the buffers
     this.packetBuffer = [];
     this.packetSequenceNumbers = [];
     this.packetTimestamps = [];
@@ -660,10 +625,8 @@ export class T140RtpTransport extends EventEmitter {
    */
   close(): void {
     try {
-      // Send any remaining FEC packets
       this._sendRemainingFecPackets();
 
-      // Close the socket or custom transport
       if (
         this.customTransport &&
         typeof this.customTransport.close === 'function'

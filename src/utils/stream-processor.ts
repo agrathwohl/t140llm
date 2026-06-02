@@ -90,7 +90,6 @@ export function attachStreamProcessor(
 ): void {
   let textBuffer = '';
   if (isAsyncIterable(stream)) {
-    // Async iterable path (modern LLM SDK streams)
     (async () => {
       try {
         for await (const chunk of stream) {

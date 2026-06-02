@@ -31,7 +31,6 @@ export function createWebSocketServer(options: WebSocketServerOptions = {}): Web
   const port = options.port || WS_SERVER_PORT;
   let server: WebSocket.Server;
 
-  // If TLS options are provided, create a secure server
   if (options.tls) {
     // Read and validate certificate files — failure throws, no insecure fallback
     const cert = fs.readFileSync(options.tls.cert, 'utf8');
@@ -46,7 +45,6 @@ export function createWebSocketServer(options: WebSocketServerOptions = {}): Web
 
     const httpsOptions: https.ServerOptions = { cert, key };
 
-    // Add CA certificate if provided
     if (options.tls.ca) {
       const ca = fs.readFileSync(options.tls.ca, 'utf8');
       if (!ca.includes('-----BEGIN')) {
@@ -55,18 +53,14 @@ export function createWebSocketServer(options: WebSocketServerOptions = {}): Web
       httpsOptions.ca = ca;
     }
 
-    // Create HTTPS server
     const httpsServer = https.createServer(httpsOptions);
 
-    // Create secure WebSocket server using the HTTPS server
     server = new WebSocket.Server({ server: httpsServer });
 
-    // Start HTTPS server
     httpsServer.listen(port, () => {
       debug(`WebSocket Secure (WSS) server is running on wss://localhost:${port}`);
     });
   } else {
-    // Create standard non-secure WebSocket server
     server = new WebSocket.Server({ port });
     debug(`WebSocket server is running on ws://localhost:${port}`);
   }
@@ -96,18 +90,15 @@ export function createWebSocketServer(options: WebSocketServerOptions = {}): Web
     });
 
     ws.on('message', (message: string) => {
-      // Create RTP packet with T.140 payload
       const rtpPacket = createRtpPacket(sequenceNumber, timestamp, message);
 
       if (socketReady) {
-        // Send RTP packet through Unix SEQPACKET socket
         seqpacketSocket.write(rtpPacket);
       } else {
         // Queue until socket is connected
         pendingMessages.push(rtpPacket);
       }
 
-      // Update sequence number and timestamp
       sequenceNumber = (sequenceNumber + 1) % RTP_MAX_SEQUENCE_NUMBER;
       // Wrap at 32-bit boundary per RTP spec
       timestamp = (timestamp + DEFAULT_TIMESTAMP_INCREMENT) >>> 0;

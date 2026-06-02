@@ -15,7 +15,6 @@ const SSRC_BUFFER_OFFSET = 0;
  * SSRC is a 32-bit unsigned integer (0 to 4,294,967,295)
  */
 export function generateSecureSSRC(): number {
-  // Generate random bytes and convert to a 32-bit unsigned integer
   const randomBytes = crypto.randomBytes(SSRC_SIZE_BYTES);
   return randomBytes.readUInt32BE(SSRC_BUFFER_OFFSET);
 }
@@ -49,7 +48,6 @@ export function createSrtpKeysFromPassphrase(
     throw new Error('Salt must be at least 16 bytes for security');
   }
 
-  // Use PBKDF2 to derive key material
   // Total derived size includes both key and salt per RFC 3711
   const derivedKeyMaterial = crypto.pbkdf2Sync(
     passphrase,

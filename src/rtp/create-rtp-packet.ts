@@ -31,7 +31,6 @@ export function createRtpPacket(
   const padding = 0;
   const extension = 0;
 
-  // Set CSRC count if CSRC list is provided
   const csrcList = options.csrcList || [];
   const csrcCount = csrcList.length;
 
@@ -39,16 +38,13 @@ export function createRtpPacket(
   // This allows receivers to identify metadata packets vs regular text
   const marker = options.metadataPacket ? 1 : 0;
 
-  // Use metadata payload type if provided and this is a metadata packet
   const payloadType =
     options.metadataPacket && options.metadataPayloadType
       ? options.metadataPayloadType
       : options.payloadType || DEFAULT_T140_PAYLOAD_TYPE;
 
-  // Generate secure SSRC if not provided
   const ssrc = options.ssrc || generateSecureSSRC();
 
-  // Calculate the header size with CSRC list
   const headerSize = RTP_HEADER_SIZE + (csrcCount * 4);
   const rtpHeader = Buffer.alloc(headerSize);
 
@@ -62,12 +58,10 @@ export function createRtpPacket(
   rtpHeader.writeUInt32BE(timestamp, RTP_OFFSET_TIMESTAMP);
   rtpHeader.writeUInt32BE(ssrc, RTP_OFFSET_SSRC);
 
-  // Add CSRC identifiers if provided
   for (let i = 0; i < csrcCount; i += 1) {
     rtpHeader.writeUInt32BE(csrcList[i], RTP_OFFSET_CSRC + (i * RTP_CSRC_ENTRY_SIZE));
   }
 
-  // Create payload buffer with optional identifiers
   let payloadBuffer;
   if (options.metadataPacket) {
     // Add metadata prefix "MD:" to identify these packets

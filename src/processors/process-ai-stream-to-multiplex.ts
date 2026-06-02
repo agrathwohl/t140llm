@@ -35,14 +35,12 @@ export function processAIStreamsToMultiplexedRtp(
   multiplexConfig: RtpConfig = {},
   processorOptions: ProcessorOptions = {}
 ): T140RtpMultiplexer {
-  // Create the multiplexer
   const multiplexer = createT140RtpMultiplexer(
     remoteAddress,
     remotePort,
     multiplexConfig
   );
 
-  // Add each stream to the multiplexer
   for (const [id, stream] of streams.entries()) {
     multiplexer.addStream(id, stream, {}, processorOptions);
   }

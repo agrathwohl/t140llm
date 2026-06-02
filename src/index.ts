@@ -1,4 +1,3 @@
-// Export everything needed from the reorganized structure
 export * from './interfaces';
 export * from './utils';
 export * from './rtp';
@@ -37,7 +36,6 @@ import { createSrtpKeysFromPassphrase, generateSecureSSRC } from './utils/securi
 
 // WebSocket server removed — consumers should call createWebSocketServer() explicitly
 
-// Import new multiplexer components for direct export
 import {
   addAIStreamToMultiplexer,
   createT140RtpMultiplexer,
