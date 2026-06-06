@@ -7,13 +7,9 @@ import { extractTextFromChunk } from './extract-text';
  * Each processor provides its own implementation of these.
  */
 export interface StreamProcessorCallbacks {
-  /** Send text through the transport */
-  sendText: (text: string) => void;
-  /** Send metadata through the transport (optional) */
+  sendText: (text: string, graphemes?: string[]) => void;
   sendMetadata?: (metadata: LLMMetadata) => void;
-  /** Close the transport and cleanup resources */
   close: () => void;
-  /** Called after buffer flush on stream end, before close */
   onStreamEnd?: () => void;
 }
 
@@ -93,7 +89,7 @@ export function attachStreamProcessor(
     (async () => {
       try {
         for await (const chunk of stream) {
-          const { text, metadata } = extractTextFromChunk(chunk);
+          const { text, metadata } = extractTextFromChunk(chunk, options.handleMetadata);
 
           if (options.handleMetadata && metadata) {
             try {
@@ -122,11 +118,11 @@ export function attachStreamProcessor(
             textBuffer = result.updatedBuffer;
             textToSend = result.processedText;
             if (!textToSend) continue;
+            callbacks.sendText(textToSend, result.processedGraphemes);
+          } else {
+            callbacks.sendText(textToSend);
           }
-
-          callbacks.sendText(textToSend);
         }
-        // Stream exhausted — equivalent to 'end' event
         if (textBuffer) {
           callbacks.sendText(textBuffer);
         }
@@ -151,7 +147,7 @@ export function attachStreamProcessor(
 
   // EventEmitter path (existing behavior — unchanged)
   stream.on('data', (chunk: unknown) => {
-    const { text, metadata } = extractTextFromChunk(chunk);
+    const { text, metadata } = extractTextFromChunk(chunk, options.handleMetadata);
 
     if (options.handleMetadata && metadata) {
       stream.emit('metadata', metadata);
@@ -181,9 +177,10 @@ export function attachStreamProcessor(
       textBuffer = result.updatedBuffer;
       textToSend = result.processedText;
       if (!textToSend) return;
+      callbacks.sendText(textToSend, result.processedGraphemes);
+    } else {
+      callbacks.sendText(textToSend);
     }
-
-    callbacks.sendText(textToSend);
   });
   stream.on('end', () => {
     if (textBuffer) {

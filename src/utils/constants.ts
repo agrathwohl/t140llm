@@ -22,9 +22,10 @@ export const RTP_CSRC_ENTRY_SIZE = 4; // bytes
 export const DEFAULT_TIMESTAMP_INCREMENT = 160; // 20ms at 8kHz sample rate
 export const DEFAULT_CHAR_RATE_LIMIT = 30; // characters per second
 export const SEND_INTERVAL_MS = 100; // milliseconds
+export const IDLE_THRESHOLD_MS = 300; // RFC 4103 §5.1 idle detection for M-bit signaling
 
 // Forward Error Correction (FEC) defaults
-export const DEFAULT_FEC_GROUP_SIZE = 5; // packets per FEC packet
+export const DEFAULT_FEC_GROUP_SIZE = 3; // packets per FEC packet
 export const FEC_HEADER_EXTENSION_SIZE = 12; // bytes - RFC 5109 FEC header size
 
 // Redundancy (RED) encoding defaults

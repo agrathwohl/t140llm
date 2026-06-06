@@ -4,6 +4,7 @@ import { toGraphemes } from '../utils/backspace-processing';
 import {
   DEFAULT_CHAR_RATE_LIMIT,
   DEFAULT_RTP_PORT,
+  IDLE_THRESHOLD_MS,
   MIN_TOKEN_BUCKET_VALUE,
   SEND_INTERVAL_MS,
   TOKEN_REFILL_RATE_DIVISOR,
@@ -33,6 +34,8 @@ export function attachStreamToRtpTransport(
   let tokenBucket = charRateLimit;
   const tokenRefillRate = charRateLimit / TOKEN_REFILL_RATE_DIVISOR;
   let drainTimer: NodeJS.Timeout | null = null;
+  let isIdle = true;
+  let idleTimer: NodeJS.Timeout | null = null;
 
   function refillTokens(): void {
     const now = Date.now();
@@ -48,18 +51,28 @@ export function attachStreamToRtpTransport(
     drainTimer = null;
     refillTokens();
 
+    let firstSendInBurst = isIdle;
     while (charQueue.length > 0 && tokenBucket >= MIN_TOKEN_BUCKET_VALUE) {
       const charsToSend = Math.min(Math.floor(tokenBucket), charQueue.length);
       const textChunk = charQueue.splice(0, charsToSend).join('');
       if (textChunk) {
-        transport.sendText(textChunk);
+        if (firstSendInBurst) {
+          transport.sendText(textChunk, { markerBit: true });
+          firstSendInBurst = false;
+          isIdle = false;
+          if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+        } else {
+          transport.sendText(textChunk);
+        }
         tokenBucket -= textChunk.length;
       }
     }
 
-    // If queue still has items (rate-limited), schedule next drain
     if (charQueue.length > 0 && !drainTimer) {
       drainTimer = setTimeout(flushQueue, SEND_INTERVAL_MS);
+    } else if (charQueue.length === 0) {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => { isIdle = true; idleTimer = null; }, IDLE_THRESHOLD_MS);
     }
   }
 
@@ -70,26 +83,22 @@ export function attachStreamToRtpTransport(
   });
 
   attachStreamProcessor(stream, options, {
-    sendText: (text) => {
-      charQueue.push(...toGraphemes(text));
+    sendText: (text, graphemes) => {
+      charQueue.push(...(graphemes || toGraphemes(text)));
       if (!drainTimer) {
         flushQueue();
       }
     },
     onStreamEnd: () => {
-      if (drainTimer) {
-        clearTimeout(drainTimer);
-        drainTimer = null;
-      }
+      if (drainTimer) { clearTimeout(drainTimer); drainTimer = null; }
+      if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
       if (charQueue.length > 0) {
         transport.sendText(charQueue.join(''));
       }
     },
     close: () => {
-      if (drainTimer) {
-        clearTimeout(drainTimer);
-        drainTimer = null;
-      }
+      if (drainTimer) { clearTimeout(drainTimer); drainTimer = null; }
+      if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
       transport.close();
     },
   });
@@ -115,6 +124,10 @@ export function createT140RtpTransport(
   ) => void;
 } {
   const transport = new T140RtpTransport(remoteAddress, remotePort, rtpConfig);
+
+  if (rtpConfig.bomPrewarm) {
+    transport.sendText('\uFEFF', { markerBit: true });
+  }
 
   const attachStream = (
     stream: TextDataStream,

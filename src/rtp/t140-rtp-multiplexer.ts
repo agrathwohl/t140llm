@@ -9,6 +9,7 @@ import { toGraphemes } from '../utils/backspace-processing';
 import {
   DEFAULT_CHAR_RATE_LIMIT,
   DEFAULT_RTP_PORT,
+  IDLE_THRESHOLD_MS,
   INITIAL_CSRC_ID,
   MIN_TOKENS_PER_STREAM,
   MIN_TOKEN_BUCKET_VALUE,
@@ -61,6 +62,8 @@ export class T140RtpMultiplexer extends EventEmitter {
   private charRateLimit: number;
   private tokenRefillRate: number;
   private nextCsrcId: number = INITIAL_CSRC_ID;
+  private isIdle: boolean = true;
+  private idleTimer: NodeJS.Timeout | null = null;
 
   // Expose for testing purposes
   public getTransport(): T140RtpTransport {
@@ -102,13 +105,13 @@ export class T140RtpMultiplexer extends EventEmitter {
     this.tokenRefillRate = this.charRateLimit / TOKEN_REFILL_RATE_DIVISOR;
   }
 
-  private scheduleDrain(): void {
+  private _scheduleDrain(): void {
     if (!this.drainTimer) {
-      this.flushQueues();
+      this._flushQueues();
     }
   }
 
-  private flushQueues(): void {
+  private _flushQueues(): void {
     this.drainTimer = null;
 
     const now = Date.now();
@@ -120,6 +123,7 @@ export class T140RtpMultiplexer extends EventEmitter {
       this.tokenBucket + elapsedMs * this.tokenRefillRate
     );
 
+    let firstSendInBurst = this.isIdle;
     if (this.streams.size > 0 && this.tokenBucket >= MIN_TOKEN_BUCKET_VALUE) {
       const streamIds = Array.from(this.streams.keys());
       const tokensPerStream = Math.max(
@@ -141,7 +145,14 @@ export class T140RtpMultiplexer extends EventEmitter {
             .join('');
 
           if (textChunk) {
-            this._sendText(textChunk, streamInfo);
+            if (firstSendInBurst) {
+              this._sendText(textChunk, streamInfo, true);
+              firstSendInBurst = false;
+              this.isIdle = false;
+              if (this.idleTimer) { clearTimeout(this.idleTimer); this.idleTimer = null; }
+            } else {
+              this._sendText(textChunk, streamInfo);
+            }
             this.tokenBucket -= textChunk.length;
           }
         }
@@ -149,9 +160,15 @@ export class T140RtpMultiplexer extends EventEmitter {
     }
 
     const hasQueuedChars = Array.from(this.streams.values())
-      .some(s => s.charQueue.length > 0);
+      .some((s) => s.charQueue.length > 0);
     if (hasQueuedChars && !this.drainTimer) {
-      this.drainTimer = setTimeout(() => this.flushQueues(), SEND_INTERVAL_MS);
+      this.drainTimer = setTimeout(() => this._flushQueues(), SEND_INTERVAL_MS);
+    } else if (!hasQueuedChars) {
+      if (this.idleTimer) clearTimeout(this.idleTimer);
+      this.idleTimer = setTimeout(() => {
+        this.isIdle = true;
+        this.idleTimer = null;
+      }, IDLE_THRESHOLD_MS);
     }
   }
 
@@ -265,7 +282,7 @@ export class T140RtpMultiplexer extends EventEmitter {
       (async () => {
         try {
           for await (const chunk of stream) {
-            const { text, metadata } = extractTextFromChunk(chunk);
+            const { text, metadata } = extractTextFromChunk(chunk, !!options.handleMetadata);
 
             if (metadata && options.handleMetadata) {
               const metadataWithStreamId = {
@@ -285,10 +302,9 @@ export class T140RtpMultiplexer extends EventEmitter {
 
             if (text) {
               streamInfo.charQueue.push(...toGraphemes(text));
-              this.scheduleDrain();
+              this._scheduleDrain();
             }
           }
-          // Stream exhausted — equivalent to 'end' event
           this.removeStream(id);
         } catch (err) {
           // Equivalent to 'error' event
@@ -307,7 +323,7 @@ export class T140RtpMultiplexer extends EventEmitter {
 
     // EventEmitter path (existing behavior — unchanged)
     stream.on('data', (chunk) => {
-      const { text, metadata } = extractTextFromChunk(chunk);
+      const { text, metadata } = extractTextFromChunk(chunk, !!options.handleMetadata);
 
       if (metadata && options.handleMetadata) {
         const metadataWithStreamId = {
@@ -327,7 +343,7 @@ export class T140RtpMultiplexer extends EventEmitter {
 
       if (text) {
         streamInfo.charQueue.push(...toGraphemes(text));
-        this.scheduleDrain();
+        this._scheduleDrain();
       }
     });
     stream.on('end', () => {
@@ -345,10 +361,10 @@ export class T140RtpMultiplexer extends EventEmitter {
   /**
    * Send text with stream identification
    */
-  private _sendText(text: string, streamInfo: StreamInfo): void {
-    // Send using the shared transport with stream identification
+  private _sendText(text: string, streamInfo: StreamInfo, markerBit?: boolean): void {
     this.transport.sendText(text, {
       ...streamInfo.config,
+      markerBit,
       streamIdentifier: streamInfo.id,
       csrcList:
         streamInfo.csrcId !== undefined ? [streamInfo.csrcId] : undefined,
@@ -359,10 +375,8 @@ export class T140RtpMultiplexer extends EventEmitter {
    * Close the multiplexer and all streams
    */
   close(): void {
-    if (this.drainTimer) {
-      clearTimeout(this.drainTimer);
-      this.drainTimer = null;
-    }
+    if (this.drainTimer) { clearTimeout(this.drainTimer); this.drainTimer = null; }
+    if (this.idleTimer) { clearTimeout(this.idleTimer); this.idleTimer = null; }
 
     // Send any remaining characters from all streams
     for (const [_id, streamInfo] of this.streams.entries()) {
