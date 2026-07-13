@@ -368,6 +368,7 @@ export class T140RtpMultiplexer extends EventEmitter {
       streamIdentifier: streamInfo.id,
       csrcList:
         streamInfo.csrcId !== undefined ? [streamInfo.csrcId] : undefined,
+      markerBit,
     });
   }
 
