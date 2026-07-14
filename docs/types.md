@@ -40,7 +40,7 @@ The configuration object shared by every RTP/SRTP transport. All fields are opti
 | `redEnabled` | `boolean` | Enable T.140 redundancy (RED) |
 | `redPayloadType` | `number` | Payload type for RED encoding |
 | `redundancyLevel` | `number` | Number of redundant T.140 blocks to include |
-| `customTransport` | `TransportStream` | Use instead of the default UDP socket |
+| `customTransport` | [`TransportStream`](/types#transportstream) | Use instead of the default UDP socket |
 | `handleMetadata` | `boolean` | Detect and process LLM metadata |
 | `metadataCallback` | `(m: LLMMetadata) => void` | Called for each metadata item |
 | `sendMetadataAsPackets` | `boolean` | Send metadata as separate RTP packets |
@@ -54,13 +54,13 @@ The configuration object shared by every RTP/SRTP transport. All fields are opti
 
 ## SrtpConfig
 
-Extends `RtpConfig` (minus `charRateLimit`) with the SRTP key material.
+Extends [`RtpConfig`](/types#rtpconfig) (minus `charRateLimit`) with the SRTP key material.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `masterKey` | `Buffer` | **Required.** SRTP master key |
 | `masterSalt` | `Buffer` | **Required.** SRTP master salt |
-| `profile` | `SrtpProtectionProfile` | Crypto profile (default profile 1) |
+| `profile` | [`SrtpProtectionProfile`](/types#srtpprotectionprofile) | Crypto profile (default profile 1) |
 | `isSRTCP` | `boolean` | Treat as SRTCP (default `false`) |
 
 ### SrtpProtectionProfile
@@ -102,7 +102,7 @@ interface ProcessorOptions {
 }
 ```
 
-`AttachStreamOptions` extends this with `sendMetadataOverWebsocket?: boolean` and `tlsOptions?: TLSOptions`.
+[`AttachStreamOptions`](/types#processor-options) extends this with `sendMetadataOverWebsocket?: boolean` and `tlsOptions?: TLSOptions`.
 
 ## Metadata
 
@@ -118,7 +118,7 @@ Emitted for tool calls, tool results, reasoning, and custom provider metadata. E
 
 ## Errors
 
-`T140RtpTransport` emits typed errors on its `error` event.
+[`T140RtpTransport`](/api#t140rtptransport) emits typed errors on its `error` event.
 
 ```typescript
 interface T140RtpError {
@@ -128,7 +128,7 @@ interface T140RtpError {
 }
 ```
 
-`T140RtpErrorType` is an enum:
+[`T140RtpErrorType`](/types#errors) is an enum:
 
 | Value | When |
 | --- | --- |

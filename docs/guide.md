@@ -68,6 +68,6 @@ Every transport can be [pre-connected](/api#pre-connecting-transports) before th
 
 - [Provider guide](/providers) — OpenAI, Anthropic, Gemini, Mistral, Cohere, Ollama, Vercel AI SDK
 - [API reference](/api) — all functions, classes, and config
-- [Types & interfaces](/types) — `RtpConfig`, `SrtpConfig`, `TransportStream`, errors, metadata
+- [Types & interfaces](/types) — [`RtpConfig`](/types#rtpconfig), [`SrtpConfig`](/types#srtpconfig), [`TransportStream`](/types#transportstream), errors, metadata
 - [Steganography](/steganography) — hide RTP packets in cover media
 - [Examples](/examples) — runnable demos

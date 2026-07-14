@@ -28,7 +28,7 @@ Processes T.140 backspace characters (`processBackspaces: true`), simulating liv
 
 ## Custom transport — `custom_transport_example.js`
 
-A transport that logs packets instead of sending them, used both directly with `T140RtpTransport` and via `processAIStreamToRtp` — a template for real transports like WebRTC data channels.
+A transport that logs packets instead of sending them, used both directly with [`T140RtpTransport`](/api#t140rtptransport) and via `processAIStreamToRtp` — a template for real transports like WebRTC data channels.
 
 ## Direct socket — `direct_socket_example.js`
 

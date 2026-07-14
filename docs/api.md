@@ -2,7 +2,7 @@
 
 All functions accept a `stream` that is either an EventEmitter emitting text chunks or an async iterable (e.g. a direct LLM SDK stream).
 
-For the config objects and exported types referenced below (`RtpConfig`, `SrtpConfig`, `TransportStream`, `LLMMetadata`, `T140RtpError`, …) see [Types & interfaces](/types). For hiding packets in cover media, see [Steganography](/steganography).
+For the config objects and exported types referenced below ([`RtpConfig`](/types#rtpconfig), [`SrtpConfig`](/types#srtpconfig), [`TransportStream`](/types#transportstream), [`LLMMetadata`](/types#metadata), [`T140RtpError`](/types#errors), …) see [Types & interfaces](/types). For hiding packets in cover media, see [Steganography](/steganography).
 
 - [Processing functions](#processing-functions)
 - [Transport factories](#transport-factories)
@@ -28,7 +28,7 @@ Sends text chunks directly as T.140 over RTP. With FEC enabled, adds Forward Err
 
 - `remoteAddress` `string` — remote IP (ignored when a custom transport is set).
 - `remotePort` `number` — optional, defaults to `5004`.
-- `rtpConfig` `RtpConfig` — optional:
+- `rtpConfig` [`RtpConfig`](/types#rtpconfig) — optional:
   - `payloadType` `number` — default `96`.
   - `ssrc` `number` — default: a cryptographically secure random value.
   - `initialSequenceNumber` `number` — default `0`.
@@ -38,28 +38,28 @@ Sends text chunks directly as T.140 over RTP. With FEC enabled, adds Forward Err
   - `fecPayloadType` `number` — default `97`.
   - `fecGroupSize` `number` — media packets protected per FEC packet, default `3`.
   - `redEnabled` `boolean` — enable T.140 redundancy.
-  - `customTransport` `TransportStream` — replaces the UDP socket.
-- returns `T140RtpTransport`.
+  - `customTransport` [`TransportStream`](/types#transportstream) — replaces the UDP socket.
+- returns [`T140RtpTransport`](/api#t140rtptransport).
 
 ### processAIStreamToSrtp(stream, remoteAddress, [remotePort], srtpConfig)
 
 Same as `processAIStreamToRtp`, but encrypts with SRTP.
 
 - `remotePort` `number` — optional, defaults to `5006`.
-- `srtpConfig` `SrtpConfig`:
+- `srtpConfig` [`SrtpConfig`](/types#srtpconfig):
   - `masterKey` `Buffer` — required.
   - `masterSalt` `Buffer` — required.
-  - `profile` `SrtpProtectionProfile` — optional (valid `0x0001`–`0x0008`).
-  - `customTransport` `TransportStream` — optional.
-- returns `T140RtpTransport`.
+  - `profile` [`SrtpProtectionProfile`](/types#srtpprotectionprofile) — optional (valid `0x0001`–`0x0008`).
+  - `customTransport` [`TransportStream`](/types#transportstream) — optional.
+- returns [`T140RtpTransport`](/api#t140rtptransport).
 
 ### processAIStreamToDirectSocket(stream, [socketPath], [rtpConfig])
 
 Sends RTP-framed T.140 straight to a Unix SEQPACKET socket, skipping the WebSocket hop.
 
 - `socketPath` `string` — optional, defaults to the library's default socket path.
-- `rtpConfig` `RtpConfig` — optional, same options as `processAIStreamToRtp`.
-- returns `T140RtpTransport`.
+- `rtpConfig` [`RtpConfig`](/types#rtpconfig) — optional, same options as `processAIStreamToRtp`.
+- returns [`T140RtpTransport`](/api#t140rtptransport).
 
 ### processAIStreamsToMultiplexedRtp(streams, remoteAddress, [remotePort], [rtpConfig])
 
@@ -67,11 +67,11 @@ Combines multiple streams into one multiplexed RTP output.
 
 - `streams` `Map<string, TextDataStream>` — stream IDs to streams.
 - `remotePort` `number` — optional, defaults to `5004`.
-- `rtpConfig` `RtpConfig` — optional, plus:
+- `rtpConfig` [`RtpConfig`](/types#rtpconfig) — optional, plus:
   - `multiplexEnabled` `boolean` — **required**, set `true`.
   - `useCsrcForStreamId` `boolean` — use the RTP CSRC field for stream IDs (recommended), default `false`.
   - `charRateLimit` `number` — combined character rate limit, default `30`.
-- returns `T140RtpMultiplexer`.
+- returns [`T140RtpMultiplexer`](/api#t140rtpmultiplexer).
 
 ## Transport factories
 
@@ -101,7 +101,7 @@ Each factory creates a transport up front and returns an `attachStream(stream, [
 
 - `multiplexConfig.multiplexEnabled` `boolean` — **required**, set `true`.
 - `multiplexConfig.useCsrcForStreamId` `boolean` — optional, default `false`.
-- returns `T140RtpMultiplexer`.
+- returns [`T140RtpMultiplexer`](/api#t140rtpmultiplexer).
 
 ## Pre-connecting transports
 
@@ -136,7 +136,7 @@ Derives `{ masterKey, masterSalt }` from a passphrase. For production, use a str
 
 Manages an RTP/SRTP connection for sending T.140.
 
-- `constructor(remoteAddress, [remotePort = 5004], [config])` — `config` accepts `RtpConfig`, including `customTransport`.
+- `constructor(remoteAddress, [remotePort = 5004], [config])` — `config` accepts [`RtpConfig`](/types#rtpconfig), including `customTransport`.
 - `setupSrtp(srtpConfig)` — initializes SRTP. Returns `void`.
 - `sendText(text)` — sends text as T.140, generating FEC packets when enabled. Returns `void`.
 - `close()` — closes the socket/transport, flushing any remaining FEC packets. Returns `void`.

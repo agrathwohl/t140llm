@@ -59,15 +59,15 @@ Everything from [`RtpConfig`](/types#rtpconfig) applies, plus the `steganography
 
 ### createStegT140RtpTransport(remoteAddress, [remotePort], [config])
 
-Creates a `T140RtpTransport` whose packets are steganographically encoded before sending. When `config.steganography.enabled` is false, it behaves like a plain RTP transport. Returns `T140RtpTransport`.
+Creates a [`T140RtpTransport`](/api#t140rtptransport) whose packets are steganographically encoded before sending. When `config.steganography.enabled` is false, it behaves like a plain RTP transport. Returns [`T140RtpTransport`](/api#t140rtptransport).
 
 ### processAIStreamToStegRtp(stream, remoteAddress, [remotePort], [config])
 
-Convenience wrapper: builds a steganographic transport and pipes an AI stream into it. Returns `T140RtpTransport`.
+Convenience wrapper: builds a steganographic transport and pipes an AI stream into it. Returns [`T140RtpTransport`](/api#t140rtptransport).
 
 ## StegTransport
 
-The `TransportStream` wrapper that performs the encoding. Construct it around any inner transport to add steganography to a transport you already have:
+The [`TransportStream`](/types#transportstream) wrapper that performs the encoding. Construct it around any inner transport to add steganography to a transport you already have:
 
 ```typescript
 import { StegTransport } from "t140llm/dist/steganography";
@@ -79,7 +79,7 @@ const steg = new StegTransport(innerTransport, {
 });
 ```
 
-It implements `StegTransportInterface`:
+It implements [`StegTransportInterface`](/steganography#stegtransport):
 
 | Method | Purpose |
 | --- | --- |
@@ -87,7 +87,7 @@ It implements `StegTransportInterface`:
 | `close?()` | Close the inner transport |
 | `encode(data, cover)` | Hide `data` inside `cover`, returning the modified cover |
 | `decode(stegData)` | Extract the hidden data from a steganographic buffer |
-| `getConfig()` | Return the current `StegConfig` |
+| `getConfig()` | Return the current [`StegConfig`](/steganography#stegconfig) |
 | `updateConfig(partial)` | Merge new settings into the config |
 
 ## Examples
