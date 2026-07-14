@@ -12,6 +12,8 @@ export default defineConfig({
       { text: 'Guide', link: '/guide' },
       { text: 'Providers', link: '/providers' },
       { text: 'API', link: '/api' },
+      { text: 'Types', link: '/types' },
+      { text: 'Steganography', link: '/steganography' },
       { text: 'Examples', link: '/examples' },
     ],
     sidebar: [
@@ -26,6 +28,8 @@ export default defineConfig({
         text: 'Reference',
         items: [
           { text: 'API reference', link: '/api' },
+          { text: 'Types & interfaces', link: '/types' },
+          { text: 'Steganography', link: '/steganography' },
           { text: 'Examples', link: '/examples' },
         ],
       },

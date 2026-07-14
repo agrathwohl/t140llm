@@ -2,6 +2,8 @@
 
 All functions accept a `stream` that is either an EventEmitter emitting text chunks or an async iterable (e.g. a direct LLM SDK stream).
 
+For the config objects and exported types referenced below (`RtpConfig`, `SrtpConfig`, `TransportStream`, `LLMMetadata`, `T140RtpError`, …) see [Types & interfaces](/types). For hiding packets in cover media, see [Steganography](/steganography).
+
 - [Processing functions](#processing-functions)
 - [Transport factories](#transport-factories)
 - [Pre-connecting transports](#pre-connecting-transports)

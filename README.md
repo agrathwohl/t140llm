@@ -82,6 +82,7 @@ Every transport can be [pre-connected](docs/api.md#pre-connecting-transports) be
 - [x] Direct async-iterable support — pass SDK streams with no EventEmitter wrapping
 - [x] Reasoning and output-metadata handling
 - [x] T.140 backspace processing
+- [x] Steganography — hide RTP packets inside cover media ([guide](docs/steganography.md))
 
 **Provider support:** Vercel AI SDK · Anthropic · OpenAI · Cohere · Mistral · Google Gemini · Ollama · reasoning streams · tool calls. See the [provider guide](docs/providers.md).
 
@@ -104,6 +105,8 @@ See [`examples/README.md`](examples/README.md) for how to run each one.
 
 - [Provider guide](docs/providers.md) — every supported LLM SDK
 - [API reference](docs/api.md) — all functions, classes, and config options
+- [Types & interfaces](docs/types.md) — `RtpConfig`, `SrtpConfig`, `TransportStream`, errors, metadata
+- [Steganography](docs/steganography.md) — hide RTP packets in cover media
 - [Full docs site](https://agrathwohl.github.io/t140llm/)
 
 ## License
