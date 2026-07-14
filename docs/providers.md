@@ -153,8 +153,8 @@ processAIStream(stream, "ws://localhost:3000", {
 ```
 
 For separate transports for text and reasoning, see
-[`examples/reasoning_example.js`](../examples/reasoning_example.js) and
-[`examples/reasoning_direct_socket_example.js`](../examples/reasoning_direct_socket_example.js).
+[`examples/reasoning_example.js`](https://github.com/agrathwohl/t140llm/blob/master/examples/reasoning_example.js) and
+[`examples/reasoning_direct_socket_example.js`](https://github.com/agrathwohl/t140llm/blob/master/examples/reasoning_direct_socket_example.js).
 
 ## Support matrix
 

@@ -24,3 +24,7 @@ node_modules/
 
 # Do not ignore
 !rollup.config.js
+
+# VitePress
+docs/.vitepress/dist
+docs/.vitepress/cache

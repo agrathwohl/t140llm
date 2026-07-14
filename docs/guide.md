@@ -1,4 +1,4 @@
-# t140llm
+# Overview
 
 > Convert LLM streaming responses into [T.140](https://www.itu.int/rec/T-REC-T.140) real-time text for SIP, WebRTC, and (S)RTP.
 
@@ -38,11 +38,23 @@ const transport = processAIStreamToRtp(stream, "192.168.1.100", 5004);
 // transport.close() when done
 ```
 
-Streams are consumed as-is — EventEmitters and async iterables both work, no wrapping required. The create-stream / hand-to-`processAIStream*` pattern is the whole surface; see the [provider guide](providers.md) for every supported SDK.
+Streams are consumed as-is — EventEmitters and async iterables both work, no wrapping required. The create-stream / hand-to-`processAIStream*` pattern is the whole surface; see the [provider guide](/providers) for every supported SDK.
 
 ## Why T.140?
 
 T.140 transmits text over IP as it is being written, rather than after the full message is composed — a good fit for low-latency and lossy links (accessibility services, TTY relays, noisy radio, satellite). The RTP pipeline uses an event-driven send model with sub-millisecond chunk-to-wire latency (avg ~0.1 ms in the [included benchmark](https://github.com/agrathwohl/t140llm/blob/master/examples/latency_benchmark.js)).
+
+## Transports
+
+| Function | Output | Notes |
+| --- | --- | --- |
+| `processAIStream` | WebSocket | Default; T.140 over `ws://` |
+| `processAIStreamToRtp` | RTP over UDP | Optional FEC (RFC 5109) and redundancy |
+| `processAIStreamToSrtp` | Encrypted SRTP | Keys from passphrase or your own |
+| `processAIStreamToDirectSocket` | Unix SEQPACKET socket | No WebSocket hop, still RTP-framed |
+| `processAIStreamsToMultiplexedRtp` | One RTP stream, many LLMs | CSRC-tagged; demux on the far end |
+
+Every transport can be [pre-connected](/api#pre-connecting-transports) before the stream exists (to cut startup latency) and can run over a [custom transport](/api#transportstream-interface) (WebRTC data channel, steganographic carrier, etc.).
 
 ## How it works
 
@@ -54,6 +66,6 @@ T.140 transmits text over IP as it is being written, rather than after the full 
 
 ## Next steps
 
-- [Provider guide](providers.md) — OpenAI, Anthropic, Gemini, Mistral, Cohere, Ollama, Vercel AI SDK
-- [API reference](api.md) — all functions, classes, and config
-- [Examples](examples.md) — runnable demos
+- [Provider guide](/providers) — OpenAI, Anthropic, Gemini, Mistral, Cohere, Ollama, Vercel AI SDK
+- [API reference](/api) — all functions, classes, and config
+- [Examples](/examples) — runnable demos

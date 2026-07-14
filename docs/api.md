@@ -116,7 +116,7 @@ function handleLLMResponse(llmStream) {
 ```
 
 The same pattern applies to `createDirectSocketTransport`, `createT140RtpTransport`, and
-`createT140SrtpTransport`. See [`examples/pre_connect_example.js`](../examples/pre_connect_example.js).
+`createT140SrtpTransport`. See [`examples/pre_connect_example.js`](https://github.com/agrathwohl/t140llm/blob/master/examples/pre_connect_example.js).
 
 ## Utilities
 
