@@ -9,6 +9,10 @@
     "object-curly-spacing": false,
     "brace-style": false,
     "array-bracket-spacing": false,
-    "no-bitwise": false
+    "no-bitwise": false,
+    "ter-arrow-parens": [
+      true,
+      "always"
+    ]
   }
 }
