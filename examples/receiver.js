@@ -1,8 +1,12 @@
 const dgram = require('dgram');
 const WebSocket = require('ws');
 
-// RTP header size to extract payload
-const RTP_HEADER_SIZE = 12;
+// extractT140Text handles both text/t140 and text/red packets. Redundancy is on
+// by default (RFC 4103 section 4), so the text is not simply at byte offset 12.
+const { extractT140Text, parseT140RedPacket } = require('../dist');
+
+// Payload type the sender uses for text/red
+const RED_PAYLOAD_TYPE = 98;
 
 // Set up UDP receivers for RTP and direct text 
 // Create socket for standard RTP
@@ -32,14 +36,28 @@ const received = {
   websocket: ''
 };
 
-// RTP socket handler - extract payload from RTP packets
+// RTP socket handler - extract the primary T140block from each packet
 rtpSocket.on('message', (msg) => {
-  if (msg.length > RTP_HEADER_SIZE) {
-    // Extract the payload (skip the RTP header)
-    const payload = msg.slice(RTP_HEADER_SIZE).toString('utf-8');
-    console.log(`RTP received: ${payload}`);
-    received.rtp += payload;
+  if (msg.length <= 12) {
+    return;
   }
+
+  const payload = extractT140Text(msg, RED_PAYLOAD_TYPE);
+
+  // With redundancy on, each packet also repeats earlier blocks. Show them so
+  // you can see what would be recoverable if this packet were the only arrival.
+  if ((msg[1] & 0x7f) === RED_PAYLOAD_TYPE) {
+    const red = parseT140RedPacket(msg);
+    const ages = red.redundant.map((b) => `${b.timestampOffset}ms`).join(', ');
+    console.log(
+      `RTP received: "${payload}" (seq ${red.sequenceNumber}, ` +
+      `${red.redundant.length} redundant block(s)${ages ? `: ${ages}` : ''})`
+    );
+  } else {
+    console.log(`RTP received: ${payload}`);
+  }
+
+  received.rtp += payload;
 });
 
 // SRTP socket handler - extract payload from SRTP packets
@@ -60,6 +78,12 @@ directSocket.on('message', (msg) => {
 // WebSocket client handlers
 wsClient.on('open', () => {
   console.log('WebSocket connection established');
+});
+
+// Without this listener a refused connection would exit the process. Start the
+// WebSocket server first, or ignore this leg and watch the UDP ports.
+wsClient.on('error', (err) => {
+  console.log(`WebSocket not available: ${err.message}`);
 });
 
 wsClient.on('message', (data) => {

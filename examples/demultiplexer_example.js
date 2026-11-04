@@ -4,7 +4,10 @@ const t140llm = require('../dist'); // Adjust path as needed
 // Create a UDP socket to receive RTP packets
 const socket = dgram.createSocket('udp4');
 
-// Create a demultiplexer for T140 RTP streams
+// Create a demultiplexer for T140 RTP streams.
+// It decodes text/red packets (payload type 98, the default) as well as plain
+// text/t140, and delivers the primary T140block of each packet. Pass
+// { redPayloadType } if the sender uses a different payload type for RED.
 const demultiplexer = new t140llm.T140StreamDemultiplexer();
 
 // Set up demultiplexer event handlers

@@ -7,11 +7,15 @@
 
 require('dotenv').config(); // Load environment variables from .env file
 const { EventEmitter } = require('events');
+// Steganography is an optional module: it is not re-exported from the package
+// root, so import it from its own build. It needs @agrathwohl/llm-steg:
+//   npm config set @agrathwohl:registry https://npm.pkg.github.com
+//   NODE_AUTH_TOKEN=<token with read:packages> npm install @agrathwohl/llm-steg
 const {
   processAIStreamToStegRtp,
   createStegT140RtpTransport,
   StegTransport
-} = require('../../dist');
+} = require('../../dist/steganography');
 
 /**
  * Create a simple mock AI stream for demonstration purposes
@@ -122,7 +126,7 @@ function runWithLSBAlgorithm() {
       payloadType: 96,
       steganography: {
         enabled: true,
-        encodeMode: 'fixed', // Uses llm-steg LSB algorithm
+        algorithm: 'lsb', // LSB steganography from llm-steg
         coverMedia,
         seed: "example-random-seed"
       }
@@ -155,7 +159,7 @@ function demonstrateEncodeDecode() {
   // Create steganography transport
   const stegTransport = new StegTransport(mockTransport, {
     enabled: true,
-    encodeMode: 'fixed',
+    algorithm: 'lsb',
     coverMedia
   });
 

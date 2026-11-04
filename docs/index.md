@@ -16,9 +16,9 @@ hero:
       link: https://github.com/agrathwohl/t140llm
 features:
   - title: Any LLM SDK
-    details: Pass OpenAI, Anthropic, Gemini, Mistral, Cohere, Ollama, or Vercel AI SDK streams straight in — EventEmitters and async iterables both work, no wrapping.
+    details: Pass OpenAI, Anthropic, Gemini, Mistral, Cohere, Ollama, or Vercel AI SDK streams straight in. EventEmitters and async iterables both work, with no wrapping.
   - title: Real transports
     details: WebSocket, RTP, SRTP, and Unix sockets, with FEC (RFC 5109), redundancy, and multiplexing of several LLM streams into one output.
   - title: Low latency
-    details: An event-driven send model delivers characters with sub-millisecond chunk-to-wire latency — built for lossy and time-sensitive links.
+    details: An event-driven send model delivers characters with sub-millisecond chunk-to-wire latency, built for lossy and time-sensitive links.
 ---

@@ -4,19 +4,28 @@ import * as https from 'https';
 import * as net from 'net';
 import WebSocket from 'ws';
 import { createRtpPacket } from '../rtp/create-rtp-packet';
+import { createT140Clock } from '../rtp/t140-clock';
 import {
-  DEFAULT_TIMESTAMP_INCREMENT,
   RTP_MAX_SEQUENCE_NUMBER,
   SEQPACKET_SOCKET_PATH,
   WS_SERVER_PORT,
 } from '../utils/constants';
+import { generateSecureSSRC } from '../utils/security';
 
 const debug = createDebug('t140llm:websocket');
+
+/** Largest WebSocket message accepted from a client, in bytes. */
+const MAX_MESSAGE_BYTES = 64 * 1024;
+/** Packets queued per connection while the backend socket is still connecting. */
+const MAX_PENDING_PACKETS = 1000;
+
 /**
- * Interface for WebSocket server configuration options
+ * WebSocket server configuration options
  */
 export interface WebSocketServerOptions {
   port?: number;
+  /** Interface to listen on. Default 127.0.0.1: the relay has no authentication. */
+  host?: string;
   tls?: {
     cert: string;   // Path to certificate file
     key: string;    // Path to private key file
@@ -24,66 +33,68 @@ export interface WebSocketServerOptions {
   };
 }
 
+function readPem(path: string, what: string): string {
+  const pem = fs.readFileSync(path, 'utf8');
+  if (!pem.includes('-----BEGIN')) {
+    throw new Error(`TLS ${what} must be in PEM format. Refusing to start insecure server.`);
+  }
+  return pem;
+}
+
+function messageToString(message: WebSocket.Data): string {
+  if (typeof message === 'string') return message;
+  if (Array.isArray(message)) return Buffer.concat(message).toString('utf-8');
+  return Buffer.from(message as ArrayBuffer).toString('utf-8');
+}
+
 /**
- * Create and initialize a WebSocket server with optional TLS support
+ * Start a WebSocket server that frames every incoming text message as one
+ * text/t140 RTP packet and writes it to the local SEQPACKET socket.
+ *
+ * Each WebSocket connection is one RTP stream: its own SSRC, sequence counter,
+ * and 1000 Hz clock (RFC 4103 §3). With `tls` the server refuses to start
+ * unless the certificate files are PEM.
  */
 export function createWebSocketServer(options: WebSocketServerOptions = {}): WebSocket.Server {
   const port = options.port || WS_SERVER_PORT;
+  const host = options.host ?? '127.0.0.1';
   let server: WebSocket.Server;
 
   if (options.tls) {
-    // Read and validate certificate files — failure throws, no insecure fallback
-    const cert = fs.readFileSync(options.tls.cert, 'utf8');
-    const key = fs.readFileSync(options.tls.key, 'utf8');
-
-    if (!cert.includes('-----BEGIN CERTIFICATE-----')) {
-      throw new Error('TLS certificate must be in PEM format. Refusing to start insecure server.');
-    }
-    if (!key.includes('-----BEGIN')) {
-      throw new Error('TLS private key must be in PEM format. Refusing to start insecure server.');
-    }
-
-    const httpsOptions: https.ServerOptions = { cert, key };
-
+    const httpsOptions: https.ServerOptions = {
+      cert: readPem(options.tls.cert, 'certificate'),
+      key: readPem(options.tls.key, 'private key'),
+    };
     if (options.tls.ca) {
-      const ca = fs.readFileSync(options.tls.ca, 'utf8');
-      if (!ca.includes('-----BEGIN')) {
-        throw new Error('TLS CA certificate must be in PEM format. Refusing to start insecure server.');
-      }
-      httpsOptions.ca = ca;
+      httpsOptions.ca = readPem(options.tls.ca, 'CA certificate');
     }
 
     const httpsServer = https.createServer(httpsOptions);
-
-    server = new WebSocket.Server({ server: httpsServer });
-
-    httpsServer.listen(port, () => {
-      debug(`WebSocket Secure (WSS) server is running on wss://localhost:${port}`);
+    server = new WebSocket.Server({ server: httpsServer, maxPayload: MAX_MESSAGE_BYTES });
+    httpsServer.listen(port, host, () => {
+      debug(`WebSocket Secure (WSS) server is running on wss://${host}:${port}`);
     });
   } else {
-    server = new WebSocket.Server({ port });
-    debug(`WebSocket server is running on ws://localhost:${port}`);
+    server = new WebSocket.Server({ port, host, maxPayload: MAX_MESSAGE_BYTES });
+    debug(`WebSocket server is running on ws://${host}:${port}`);
   }
 
   server.on('connection', (ws, req) => {
-    if (req.socket) {
-      req.socket.setNoDelay(true);
-    }
+    req.socket?.setNoDelay(true);
 
     const seqpacketSocket = net.createConnection(SEQPACKET_SOCKET_PATH);
-
+    const ssrc = generateSecureSSRC();
+    const clock = createT140Clock();
     let sequenceNumber = 0;
-    let timestamp = 0;
     let socketReady = false;
-    const pendingMessages: Buffer[] = [];
+    const pendingPackets: Buffer[] = [];
 
     seqpacketSocket.on('connect', () => {
       socketReady = true;
-      // Flush any messages queued before connection was established
-      for (const msg of pendingMessages) {
-        seqpacketSocket.write(msg);
+      for (const packet of pendingPackets) {
+        seqpacketSocket.write(packet);
       }
-      pendingMessages.length = 0;
+      pendingPackets.length = 0;
     });
 
     seqpacketSocket.on('error', (err) => {
@@ -91,19 +102,24 @@ export function createWebSocketServer(options: WebSocketServerOptions = {}): Web
       ws.close(1011, 'Backend socket error');
     });
 
-    ws.on('message', (message: string) => {
-      const rtpPacket = createRtpPacket(sequenceNumber, timestamp, message);
+    ws.on('error', (err) => {
+      debug('WebSocket client error: %O', err);
+      seqpacketSocket.destroy();
+    });
+
+    ws.on('message', (message: WebSocket.Data) => {
+      const rtpPacket = createRtpPacket(
+        sequenceNumber, clock.next(), messageToString(message), { ssrc }
+      );
+      sequenceNumber = (sequenceNumber + 1) % RTP_MAX_SEQUENCE_NUMBER;
 
       if (socketReady) {
         seqpacketSocket.write(rtpPacket);
+      } else if (pendingPackets.length < MAX_PENDING_PACKETS) {
+        pendingPackets.push(rtpPacket);
       } else {
-        // Queue until socket is connected
-        pendingMessages.push(rtpPacket);
+        ws.close(1013, 'Backend not ready');
       }
-
-      sequenceNumber = (sequenceNumber + 1) % RTP_MAX_SEQUENCE_NUMBER;
-      // Wrap at 32-bit boundary per RTP spec
-      timestamp = (timestamp + DEFAULT_TIMESTAMP_INCREMENT) >>> 0;
     });
 
     ws.on('close', () => {

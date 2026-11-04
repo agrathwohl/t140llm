@@ -1,51 +1,51 @@
 /**
- * Interface for steganography configuration
+ * Steganography configuration for a T.140 RTP transport.
+ *
+ * Encoding is performed by @agrathwohl/llm-steg
+ * (https://github.com/agrathwohl/llm-steg), an optional dependency.
  */
 export interface StegConfig {
   /**
-   * Enable steganography for the transport
+   * Enable steganography. When false, packets pass through untouched.
+   * Default: true.
    */
-  enabled: boolean;
+  enabled?: boolean;
 
   /**
-   * Mode for encoding algorithm generation
-   * - 'llm': Use LLM to generate the algorithm
-   * - 'fixed': Use a built-in algorithm
+   * Algorithm to use. 'lsb' hides each bit of the packet in the least
+   * significant bit of a cover byte. Default: 'lsb'.
    */
-  encodeMode: 'llm' | 'fixed';
+  algorithm?: 'lsb';
 
   /**
-   * Cover media buffers to use for steganography
-   * These could be image samples, audio samples, or other media
+   * Cover media buffers that packets are hidden inside, used round-robin.
+   * For LSB each buffer must be at least 8 times the packet size plus a
+   * 4-byte length header.
    */
   coverMedia?: Buffer[];
 
-  /**
-   * Prompt to use for LLM algorithm generation
-   * Only used when encodeMode is 'llm'
-   */
-  prompt?: string;
-
-  /**
-   * Pre-generated algorithm code when not using dynamic generation
-   * Only used when encodeMode is 'fixed'
-   */
-  algorithm?: string;
-
-  /**
-   * Random seed for deterministic algorithm generation
-   */
+  /** Seed for deterministic encoding. A random seed is generated when omitted. */
   seed?: string;
 
   /**
-   * Percentage of packet content to encode (0-100)
-   * Default: 100 (encode the entire packet)
+   * What to do when a packet cannot be encoded, for example when the cover is
+   * too small. 'passthrough' sends the packet unhidden, 'throw' raises an
+   * error, 'drop' discards it. Default: 'throw'.
    */
-  encodingRatio?: number;
+  onError?: 'passthrough' | 'throw' | 'drop';
+
+  /** Log encode and decode operations. Default: false. */
+  debug?: boolean;
 
   /**
-   * Custom LLM provider for algorithm generation
-   * If not provided, will attempt to use OpenAI
+   * @deprecated Only 'fixed' is accepted, and it is the default behavior.
+   * 'llm' generated and evaluated algorithm code at runtime and was removed.
    */
-  llmProvider?: unknown;
+  encodeMode?: 'fixed';
+
+  /**
+   * @deprecated No longer used. Kept so existing configuration objects still
+   * type-check.
+   */
+  encodingRatio?: number;
 }

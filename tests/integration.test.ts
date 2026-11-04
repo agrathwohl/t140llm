@@ -1,90 +1,84 @@
 import { EventEmitter } from 'events';
-import { 
-  processAIStream,
-  processAIStreamToRtp,
-  processAIStreamToSrtp,
-  processAIStreamToDirectSocket,
-  createSrtpKeysFromPassphrase
-} from '../src';
+import { processAIStream } from '../src/processors/process-ai-stream';
+import { processAIStreamToRtp } from '../src/processors/process-ai-stream-to-rtp';
+import { processAIStreamToSrtp } from '../src/processors/process-ai-stream-to-srtp';
+import { processAIStreamToDirectSocket } from '../src/processors/process-ai-stream-to-direct-socket';
+import { createSrtpKeysFromPassphrase } from '../src/utils/security';
+import { extractT140Text } from '../src/utils/parse-red-packet';
 
 /**
- * These are integration-style tests that verify all the processing modes work together properly.
- * We're using our mocked versions of the functions but testing the interactions between them.
+ * Integration-style tests: one AI stream through each processing mode, with
+ * only the network I/O replaced by capturing transports.
  */
+const capture = () => {
+  const sent: Buffer[] = [];
+  return { sent, customTransport: { send: (b: Buffer) => { sent.push(Buffer.from(b)); }, close: jest.fn() } };
+};
+const texts = (sent: Buffer[]): string[] => sent.map((p) => extractT140Text(p));
+
 describe('Integration Tests', () => {
   let mockAIStream: EventEmitter;
-  
+
   beforeEach(() => {
-    // Create a mock AI stream for testing
     mockAIStream = new EventEmitter();
-    jest.clearAllMocks();
   });
-  
+
   test('should handle data from all supported AI stream formats', () => {
-    // Set up direct socket mode processing
-    const socket = processAIStreamToDirectSocket(mockAIStream as any);
-    
-    // Emit data in different formats
+    const { sent, customTransport } = capture();
+    processAIStreamToDirectSocket(mockAIStream, '/s', { customTransport });
+
     mockAIStream.emit('data', 'Plain text data');
     mockAIStream.emit('data', { choices: [{ delta: { content: 'Vercel AI format' } }] });
     mockAIStream.emit('data', { choices: [{ text: 'OpenAI format' }] });
     mockAIStream.emit('data', { delta: { text: 'Anthropic format 1' } });
     mockAIStream.emit('data', { content: [{ text: 'Anthropic format 2' }] });
-    
-    // End the stream
     mockAIStream.emit('end');
-    
-    // socket.write should be called for each data emission
-    expect(socket.write).toHaveBeenCalledTimes(5);
-    
-    // socket.end should be called once when the stream ends
-    expect(socket.end).toHaveBeenCalledTimes(1);
+
+    expect(texts(sent)).toEqual([
+      'Plain text data',
+      'Vercel AI format',
+      'OpenAI format',
+      'Anthropic format 1',
+      'Anthropic format 2',
+    ]);
+    expect(customTransport.close).toHaveBeenCalledTimes(1);
   });
-  
-  test('should handle different processing modes', () => {
-    // Test all the different processing modes
-    
-    // WebSocket mode
-    processAIStream(mockAIStream as any);
-    expect(processAIStream).toHaveBeenCalled();
-    
-    // RTP mode
-    const rtpTransport = processAIStreamToRtp(mockAIStream as any, '127.0.0.1');
-    expect(processAIStreamToRtp).toHaveBeenCalled();
-    expect(rtpTransport).toBeDefined();
-    
-    // SRTP mode
+
+  test('should deliver the same text in every processing mode', () => {
+    const ws = {
+      readyState: 1, send: jest.fn(), close: jest.fn(), on: jest.fn(),
+    } as any;
+    processAIStream(mockAIStream, 'ws://localhost:1', {}, ws);
+
+    const rtp = capture();
+    processAIStreamToRtp(mockAIStream, '127.0.0.1', 5004, { customTransport: rtp.customTransport });
+
     const { masterKey, masterSalt } = createSrtpKeysFromPassphrase('test-key');
-    const srtpConfig = { masterKey, masterSalt };
-    const srtpTransport = processAIStreamToSrtp(mockAIStream as any, '127.0.0.1', 5006, srtpConfig);
-    expect(processAIStreamToSrtp).toHaveBeenCalled();
-    expect(srtpTransport).toBeDefined();
-    
-    // Direct socket mode
-    const socket = processAIStreamToDirectSocket(mockAIStream as any);
-    expect(processAIStreamToDirectSocket).toHaveBeenCalled();
-    expect(socket).toBeDefined();
-  });
-  
-  test('direct socket mode should behave similarly to other modes', () => {
-    // Set up direct socket mode
-    const socket = processAIStreamToDirectSocket(mockAIStream as any);
-    
-    // Set up RTP mode for comparison
-    const rtpTransport = processAIStreamToRtp(mockAIStream as any, '127.0.0.1');
-    
-    // Emit test data
+    const srtp = capture();
+    processAIStreamToSrtp(mockAIStream, '127.0.0.1', 5006, { masterKey, masterSalt, redEnabled: false, customTransport: srtp.customTransport });
+
+    const direct = capture();
+    processAIStreamToDirectSocket(mockAIStream, '/s', { customTransport: direct.customTransport });
+
     mockAIStream.emit('data', 'Test data');
-    
-    // Both modes should process the data
-    expect(socket.write).toHaveBeenCalled();
-    expect(rtpTransport.sendText).toHaveBeenCalled();
-    
-    // Emit end event
+
+    expect(ws.send).toHaveBeenCalledWith('Test data');
+    expect(texts(rtp.sent)).toEqual(['Test data']);
+    expect(texts(direct.sent)).toEqual(['Test data']);
+    expect(srtp.sent).toHaveLength(1);
+    expect(srtp.sent[0].length).toBe(12 + 'Test data'.length + 10);
+  });
+
+  test('direct socket mode should clean up like the other modes when the stream ends', () => {
+    const direct = capture();
+    const rtp = capture();
+    processAIStreamToDirectSocket(mockAIStream, '/s', { customTransport: direct.customTransport });
+    processAIStreamToRtp(mockAIStream, '127.0.0.1', 5004, { customTransport: rtp.customTransport });
+
+    mockAIStream.emit('data', 'Test data');
     mockAIStream.emit('end');
-    
-    // Both modes should clean up
-    expect(socket.end).toHaveBeenCalled();
-    expect(rtpTransport.close).toHaveBeenCalled();
+
+    expect(direct.customTransport.close).toHaveBeenCalledTimes(1);
+    expect(rtp.customTransport.close).toHaveBeenCalledTimes(1);
   });
 });

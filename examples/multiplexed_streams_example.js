@@ -50,8 +50,10 @@ async function main() {
       multiplexEnabled: true,
       useCsrcForStreamId: true, // Use CSRC field for identification
       charRateLimit: 50,        // Higher rate limit for multiple streams
-      fecEnabled: true,         // Enable FEC for reliability
-      redEnabled: true,         // Enable redundancy
+      // Redundancy (RFC 2198) is on by default and demultiplexer_example.js
+      // decodes it. Do not enable FEC here: FEC packets use their own payload
+      // type and the demultiplexer would read them as text.
+      redEnabled: true,
     }
   );
 

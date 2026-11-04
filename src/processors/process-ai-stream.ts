@@ -1,3 +1,4 @@
+import createDebug from 'debug';
 import WebSocket from 'ws';
 import { AttachStreamOptions, TextDataStream, WebSocketOptions } from '../interfaces';
 import { WS_SERVER_PORT } from '../utils/constants';
@@ -6,12 +7,16 @@ import {
   resolveStreamOptions,
 } from '../utils/stream-processor';
 
+const debug = createDebug('t140llm:websocket-client');
+
 function isWebSocketConnected(ws: WebSocket): boolean {
   return ws.readyState === WebSocket.OPEN;
 }
 
 /**
- * Attach a stream to an existing WebSocket connection
+ * Attach a stream to an existing WebSocket connection. Text is sent as
+ * WebSocket text frames; text that arrives before the socket opens is
+ * buffered and flushed on 'open'.
  *
  * @param ws The WebSocket connection to attach the stream to
  * @param stream The stream to attach
@@ -23,7 +28,9 @@ export function attachStreamToWebSocket(
   processorOptions: AttachStreamOptions = {}
 ): void {
   let buffer = '';
+  let ended = false;
 
+  ws.on('error', (err) => processorOptions.onError?.(err));
   ws.on('open', () => {
     const sock = (ws as any)._socket;
     if (sock && typeof sock.setNoDelay === 'function') {
@@ -33,6 +40,9 @@ export function attachStreamToWebSocket(
       const dataToSend = buffer;
       buffer = '';
       ws.send(dataToSend);
+    }
+    if (ended) {
+      ws.close();
     }
   });
 
@@ -54,6 +64,7 @@ export function attachStreamToWebSocket(
       }
     },
     close: () => {
+      ended = true;
       if (isWebSocketConnected(ws)) {
         ws.close();
       }
@@ -61,6 +72,12 @@ export function attachStreamToWebSocket(
   });
 }
 
+/**
+ * Open a WebSocket connection that streams can be attached to later.
+ *
+ * @param websocketUrl ws:// or wss:// URL (default ws://localhost:8765)
+ * @param options TLS options for wss:// URLs
+ */
 export function createT140WebSocketTransport(
   websocketUrl: string = `ws://localhost:${WS_SERVER_PORT}`,
   options: WebSocketOptions = {}
@@ -72,6 +89,9 @@ export function createT140WebSocketTransport(
   ) => void;
 } {
   const isSecure = websocketUrl.startsWith('wss://');
+  if (options.tlsOptions && !isSecure) {
+    throw new Error('tlsOptions require a wss:// URL');
+  }
   const wsOptions: WebSocket.ClientOptions =
     isSecure && options.tlsOptions
       ? {
@@ -83,42 +103,44 @@ export function createT140WebSocketTransport(
       : {};
 
   const ws = new WebSocket(websocketUrl, wsOptions);
+  // The connection is opened before any stream is attached, so handle its
+  // errors here. Without this a refused connection would exit the process.
+  ws.on('error', (err) => debug('connection error: %O', err));
 
-  const attachStream = (
-    stream: TextDataStream,
-    processorOptions: AttachStreamOptions = {}
-  ) => {
-    attachStreamToWebSocket(ws, stream, processorOptions);
+  return {
+    connection: ws,
+    attachStream: (stream, processorOptions = {}) => {
+      attachStreamToWebSocket(ws, stream, processorOptions);
+    },
   };
-
-  return { attachStream, connection: ws };
 }
 
 /** @deprecated Use createT140WebSocketTransport instead */
 export const createWebSocketConnection = createT140WebSocketTransport;
 
+/**
+ * Stream an LLM response as text over a WebSocket.
+ *
+ * @param stream The AI stream to process
+ * @param websocketUrl ws:// or wss:// URL (default ws://localhost:8765)
+ * @param options Processor and TLS options
+ * @param existingConnection Optional open WebSocket to reuse
+ * @returns The WebSocket in use
+ */
 export function processAIStream(
   stream: TextDataStream,
   websocketUrl: string = `ws://localhost:${WS_SERVER_PORT}`,
   options: AttachStreamOptions = {},
   existingConnection?: WebSocket
 ): WebSocket {
-  const processorOptions: AttachStreamOptions = {
-    processBackspaces: options.processBackspaces,
-    handleMetadata: options.handleMetadata,
-    metadataCallback: options.metadataCallback,
-    sendMetadataOverWebsocket: options.sendMetadataOverWebsocket,
-    onError: options.onError,
-  };
-
   if (existingConnection) {
-    attachStreamToWebSocket(existingConnection, stream, processorOptions);
+    attachStreamToWebSocket(existingConnection, stream, options);
     return existingConnection;
   }
 
   const { connection, attachStream } = createT140WebSocketTransport(websocketUrl, {
     tlsOptions: options.tlsOptions,
   });
-  attachStream(stream, processorOptions);
+  attachStream(stream, options);
   return connection;
 }

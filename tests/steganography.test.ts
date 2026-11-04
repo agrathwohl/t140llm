@@ -1,31 +1,49 @@
 import { EventEmitter } from 'events';
-import * as dgram from 'dgram';
-import { StegTransport } from '../src/steganography/steg-transport';
-import { StegConfig } from '../src/steganography/steg-config.interface';
-import { createStegT140RtpTransport, processAIStreamToStegRtp } from '../src/steganography/transport-factory';
-import { T140RtpTransport } from '../src/rtp/t140-rtp-transport';
 
-// Mock UDP socket
-jest.mock('dgram', () => {
-  return {
-    createSocket: jest.fn().mockImplementation(() => {
-      return {
-        send: jest.fn((data, offset, length, port, address, callback) => {
-          if (callback) callback();
-        }),
-        close: jest.fn(),
-        on: jest.fn()
-      };
-    })
-  };
-});
+// Steganography is powered by @agrathwohl/llm-steg, an optional dependency
+// published to GitHub Packages. Skip this suite when it is not installed:
+//   npm config set @agrathwohl:registry https://npm.pkg.github.com
+//   NODE_AUTH_TOKEN=<token with read:packages> npm install @agrathwohl/llm-steg
+let llmStegAvailable = true;
+try {
+  require('@agrathwohl/llm-steg');
+} catch (_err) {
+  llmStegAvailable = false;
+  // eslint-disable-next-line no-console
+  console.warn('Skipping steganography tests: @agrathwohl/llm-steg is not installed');
+}
+const describeSteg = llmStegAvailable ? describe : describe.skip;
 
-describe('Steganography Tests', () => {
+// describe.skip still evaluates its body, so load the module only when present.
+/* eslint-disable @typescript-eslint/no-var-requires */
+let StegTransport: any;
+let createStegT140RtpTransport: any;
+let processAIStreamToStegRtp: any;
+let T140RtpTransport: any;
+if (llmStegAvailable) {
+  ({ StegTransport } = require('../src/steganography/steg-transport'));
+  ({ createStegT140RtpTransport, processAIStreamToStegRtp } =
+    require('../src/steganography/transport-factory'));
+  ({ T140RtpTransport } = require('../src/rtp/t140-rtp-transport'));
+}
+/* eslint-enable @typescript-eslint/no-var-requires */
+
+jest.mock('dgram', () => ({
+  createSocket: jest.fn().mockImplementation(() => ({
+    send: jest.fn((data, offset, length, port, address, callback) => {
+      if (callback) callback();
+    }),
+    close: jest.fn(),
+    on: jest.fn(),
+  })),
+}));
+
+describeSteg('Steganography', () => {
   const mockTransport = {
     send: jest.fn((data, callback) => {
       if (callback) callback();
     }),
-    close: jest.fn()
+    close: jest.fn(),
   };
 
   afterEach(() => {
@@ -33,216 +51,136 @@ describe('Steganography Tests', () => {
   });
 
   describe('StegTransport', () => {
-    it('should create a StegTransport with default settings', () => {
-      const stegTransport = new StegTransport(mockTransport, { enabled: true });
-      expect(stegTransport).toBeDefined();
+    it('enables steganography and the LSB algorithm by default', () => {
+      const stegTransport = new StegTransport(mockTransport, {});
       expect(stegTransport.getConfig().enabled).toBe(true);
-      expect(stegTransport.getConfig().encodeMode).toBe('fixed');
+      expect(stegTransport.getConfig().algorithm).toBe('lsb');
+      expect(stegTransport.getConfig().seed).toHaveLength(32);
     });
 
-    it('should pass through data without steganography when disabled', () => {
+    it('passes data through untouched when disabled', () => {
       const stegTransport = new StegTransport(mockTransport, { enabled: false });
       const data = Buffer.from('test data');
-      
-      stegTransport.send(data, () => {});
-      
+
+      stegTransport.send(data, () => undefined);
+
       expect(mockTransport.send).toHaveBeenCalledWith(data, expect.any(Function));
     });
 
-    it('should pass through data when no cover media is available', () => {
-      const stegTransport = new StegTransport(mockTransport, { 
-        enabled: true,
-        coverMedia: []
-      });
+    it('passes data through when there is no cover media', () => {
+      const stegTransport = new StegTransport(mockTransport, { enabled: true, coverMedia: [] });
       const data = Buffer.from('test data');
-      
-      stegTransport.send(data, () => {});
-      
+
+      stegTransport.send(data, () => undefined);
+
       expect(mockTransport.send).toHaveBeenCalledWith(data, expect.any(Function));
     });
 
-    it('should encode data using LSB steganography', () => {
-      // Create a cover media buffer with predictable content
-      const coverMedia = [Buffer.alloc(1024, 0xFF)];
-      
-      const stegTransport = new StegTransport(mockTransport, { 
-        enabled: true,
-        encodeMode: 'fixed',
-        coverMedia
-      });
-      
+    it('hides the packet in the cover and recovers it', () => {
+      const coverMedia = [Buffer.alloc(1024, 0xff)];
+      const stegTransport = new StegTransport(mockTransport, { enabled: true, coverMedia });
+
       const data = Buffer.from('test');
-      stegTransport.send(data, () => {});
-      
-      // Verify that transport.send was called with a modified buffer (not the original data)
+      stegTransport.send(data, () => undefined);
+
       expect(mockTransport.send).toHaveBeenCalled();
       const sentData = mockTransport.send.mock.calls[0][0];
       expect(sentData).not.toEqual(data);
-      expect(sentData.length).toEqual(coverMedia[0].length);
-      
-      // Should be able to decode our own message
-      const decodedData = stegTransport.decode(sentData);
-      expect(decodedData.toString()).toEqual('test');
+      expect(sentData).toHaveLength(coverMedia[0].length);
+      expect(stegTransport.decode(sentData).toString()).toBe('test');
     });
 
-    it('should update configuration correctly', () => {
-      const stegTransport = new StegTransport(mockTransport, { 
-        enabled: true,
-        encodeMode: 'fixed'
-      });
-      
-      // Update config
+    it('encodes into a caller-supplied cover buffer', () => {
+      const stegTransport = new StegTransport(mockTransport, { enabled: true });
+      const cover = Buffer.alloc(1024, 0xaa);
+
+      const encoded = stegTransport.encode(Buffer.from('explicit cover'), cover);
+
+      expect(encoded).not.toEqual(cover);
+      expect(stegTransport.decode(encoded).toString()).toBe('explicit cover');
+    });
+
+    it('updates the configuration', () => {
+      const stegTransport = new StegTransport(mockTransport, { enabled: true });
+
       stegTransport.updateConfig({ enabled: false });
-      
+
       expect(stegTransport.getConfig().enabled).toBe(false);
-      expect(stegTransport.getConfig().encodeMode).toBe('fixed');
     });
 
-    it('should throw when encoding fails instead of sending raw data', () => {
-      // Create a cover media that's too small for the data
-      const tinyMedia = [Buffer.alloc(200)];
+    it('reports an error instead of sending raw data when the cover is too small', () => {
       const stegTransport = new StegTransport(mockTransport, {
         enabled: true,
-        encodeMode: 'fixed',
-        coverMedia: tinyMedia
+        coverMedia: [Buffer.alloc(200)],
       });
-      // Create data large enough to exceed the capacity
-      const data = Buffer.alloc(1000, 'X');
-      expect(() => stegTransport.send(data, () => {})).toThrow('Cover media too small');
+      const callback = jest.fn();
+
+      stegTransport.send(Buffer.alloc(1000, 'X'), callback);
+
+      expect(callback).toHaveBeenCalledWith(expect.any(Error));
+      expect(callback.mock.calls[0][0].message).toMatch(/too large|capacity/i);
       expect(mockTransport.send).not.toHaveBeenCalled();
     });
 
-    it('should work with algorithm config option (uses LSB internally)', () => {
-      // Note: Custom algorithm strings are no longer supported.
-      // The implementation now uses llm-steg's LSBAlgorithm directly.
-      // This test verifies the transport still works when algorithm is specified.
-      const coverMedia = [Buffer.alloc(1024, 0xAA)];
-
+    it('sends the packet unhidden when onError is passthrough', () => {
       const stegTransport = new StegTransport(mockTransport, {
         enabled: true,
-        encodeMode: 'fixed',
-        algorithm: 'lsb', // Algorithm name (custom strings no longer supported)
-        coverMedia
+        onError: 'passthrough',
+        coverMedia: [Buffer.alloc(200)],
       });
+      const data = Buffer.alloc(1000, 'X');
 
-      const data = Buffer.from('algorithm test');
-      stegTransport.send(data);
+      stegTransport.send(data, () => undefined);
 
       expect(mockTransport.send).toHaveBeenCalled();
-
-      // Verify the data can be decoded
-      const sentData = mockTransport.send.mock.calls[0][0];
-      const decodedData = stegTransport.decode(sentData);
-      expect(decodedData.toString()).toEqual('algorithm test');
+      expect(mockTransport.send.mock.calls[0][0]).toEqual(data);
     });
 
-    it('should close the inner transport when closed', () => {
+    it('rejects the removed LLM encode mode', () => {
+      expect(() => new StegTransport(mockTransport, { encodeMode: 'llm' } as never)).toThrow(
+        /LLM encode mode was removed/
+      );
+    });
+
+    it('closes the inner transport', () => {
       const stegTransport = new StegTransport(mockTransport, { enabled: true });
       stegTransport.close();
       expect(mockTransport.close).toHaveBeenCalled();
     });
   });
 
-  describe('Factory Functions', () => {
-    it('should create a steg RTP transport', () => {
-      const stegTransport = createStegT140RtpTransport('127.0.0.1', 5004, {
-        steganography: {
-          enabled: true,
-          encodeMode: 'fixed',
-          coverMedia: [Buffer.alloc(1024)]
-        }
+  describe('factory functions', () => {
+    it('creates an RTP transport that encodes its packets', () => {
+      const sent: Buffer[] = [];
+      const transport = createStegT140RtpTransport('127.0.0.1', 5004, {
+        redEnabled: false,
+        customTransport: {
+          send: (data: Buffer, cb?: (e?: Error) => void) => {
+            sent.push(Buffer.from(data));
+            cb?.();
+          },
+          close: () => undefined,
+        },
+        steganography: { enabled: true, coverMedia: [Buffer.alloc(4096, 0xff)] },
       });
-      
-      expect(stegTransport).toBeInstanceOf(T140RtpTransport);
-    });
 
-    it('should process AI stream with steganography', async () => {
-      // Create a mock AI stream
-      const mockStream = new EventEmitter();
-      
-      // Mock setImmediate to resolve promise immediately
-      jest.useFakeTimers();
-      
-      // Create spy on processAIStreamToRtp
-      const processSpy = jest.spyOn(require('../src/processors/process-ai-stream-to-rtp'), 'processAIStreamToRtp');
-      
-      // Call the function
-      const transport = processAIStreamToStegRtp(
-        mockStream,
-        '127.0.0.1',
-        5004,
-        {
-          steganography: {
-            enabled: true,
-            encodeMode: 'fixed',
-            coverMedia: [Buffer.alloc(1024)]
-          }
-        }
-      );
-      
-      // Verify the transport was created and processAIStreamToRtp was called
       expect(transport).toBeInstanceOf(T140RtpTransport);
-      expect(processSpy).toHaveBeenCalled();
-      
-      // Emit end event to resolve the promise
-      mockStream.emit('end');
-      jest.runAllTimers();
-    });
-  });
-
-  describe('Encoding Features', () => {
-    it('should respect encodingRatio parameter', () => {
-      // Create a transport with 50% encoding ratio
-      const coverMedia = [Buffer.alloc(1024, 0xFF)];
-      
-      const stegTransport = new StegTransport(mockTransport, { 
-        enabled: true,
-        encodeMode: 'fixed',
-        coverMedia,
-        encodingRatio: 50 // Encode only 50% of data
-      });
-      
-      const data = Buffer.from('test data for partial encoding');
-      stegTransport.send(data);
-      
-      // Verify encoding happened
-      expect(mockTransport.send).toHaveBeenCalled();
+      transport.sendText('hidden');
+      expect(sent).toHaveLength(1);
+      expect(sent[0]).toHaveLength(4096);
+      transport.close();
     });
 
-    it('should use random seed consistently', () => {
-      // Create two transports with the same seed
-      const seed = 'test-seed-123';
-      const coverMedia1 = [Buffer.alloc(1024, 0xFF)];
-      const coverMedia2 = [Buffer.alloc(1024, 0xFF)];
-      
-      const transport1 = new StegTransport(mockTransport, { 
-        enabled: true,
-        encodeMode: 'fixed',
-        coverMedia: coverMedia1,
-        seed
+    it('processes an AI stream through a steganographic transport', () => {
+      const stream = new EventEmitter();
+      const transport = processAIStreamToStegRtp(stream, '127.0.0.1', 5004, {
+        steganography: { enabled: true, coverMedia: [Buffer.alloc(4096, 0xff)] },
       });
-      
-      const mockTransport2 = { 
-        send: jest.fn((data, callback) => { if (callback) callback(); }),
-        close: jest.fn()
-      };
-      
-      const transport2 = new StegTransport(mockTransport2, { 
-        enabled: true,
-        encodeMode: 'fixed',
-        coverMedia: coverMedia2,
-        seed
-      });
-      
-      // Both should encode data in the same way with the same seed
-      const data = Buffer.from('seed test data');
-      
-      // Process directly with encode
-      const encoded1 = transport1.encode(data, coverMedia1[0]);
-      const encoded2 = transport2.encode(data, coverMedia2[0]);
-      
-      // Encodings with the same seed should be identical
-      expect(encoded1).toEqual(encoded2);
+
+      expect(transport).toBeInstanceOf(T140RtpTransport);
+      stream.emit('data', 'hi');
+      stream.emit('end');
+      transport.close();
     });
   });
 });

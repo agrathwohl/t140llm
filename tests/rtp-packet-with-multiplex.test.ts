@@ -59,7 +59,7 @@ describe('createRtpPacket with multiplexing support', () => {
     expect(payload).toBe('test-stream\x1Ehello world');
   });
   
-  it('should create a metadata packet with marker bit set', () => {
+  it('should create a metadata packet without the marker bit', () => {
     const options: Partial<RtpConfig> & { metadataPacket: boolean } = {
       metadataPacket: true,
       metadataPayloadType: 100, // Custom payload type for metadata
@@ -68,7 +68,7 @@ describe('createRtpPacket with multiplexing support', () => {
     const packet = createRtpPacket(testSequence, testTimestamp, testText, options);
     
     // Verify metadata marker bit is set
-    expect(packet[1] & 0x80).toBe(0x80); // Marker bit
+    expect(packet[1] & 0x80).toBe(0); // M-bit stays 0 (RFC 4103 §3)
     expect(packet[1] & 0x7F).toBe(100); // Metadata payload type
     
     // Verify payload has metadata prefix
@@ -89,7 +89,7 @@ describe('createRtpPacket with multiplexing support', () => {
     
     // Verify CSRC and metadata flags
     expect(packet[0] & 0x0F).toBe(1); // CSRC count of 1
-    expect(packet[1] & 0x80).toBe(0x80); // Marker bit for metadata
+    expect(packet[1] & 0x80).toBe(0); // M-bit stays 0 (RFC 4103 §3)
     expect(packet.readUInt32BE(12)).toBe(42); // CSRC value
     
     // Verify payload has metadata prefix after CSRC
@@ -133,7 +133,7 @@ describe('createRtpPacket with multiplexing support', () => {
     
     // Verify header fields
     expect(packet[1] & 0x7F).toBe(99); // Custom payload type
-    expect(packet[1] & 0x80).toBe(0x80); // Marker bit set
+    expect(packet[1] & 0x80).toBe(0); // M-bit stays 0 (RFC 4103 §3)
     expect(packet.readUInt32BE(8)).toBe(987654321); // SSRC
     
     // Verify payload

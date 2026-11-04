@@ -7,6 +7,29 @@ This directory contains examples demonstrating the T140LLM library for transmitt
 > Check out the NEW [`assistive-llm`](https://github.com/agrathwohl/assistive-llm/)
 > project for an implementation of this library.
 
+## Redundancy is on by default
+
+Every RTP packet is a text/red packet (payload type 98) carrying the previous two text blocks as well, per RFC 4103 section 4. The text is therefore not at byte offset 12. Use the library helpers to read it:
+
+```javascript
+const { extractT140Text, parseT140RedPacket } = require('t140llm');
+
+socket.on('message', (packet) => {
+  console.log(extractT140Text(packet));      // the new text in this packet
+  console.log(parseT140RedPacket(packet));   // header fields and redundant blocks
+});
+```
+
+Pass `redEnabled: false` for plain text/t140 packets. `receiver.js` and `seqpacket.js` show both.
+
+## SRTP without a shared secret
+
+`dtls_srtp_example.js` negotiates the SRTP keys with a DTLS-SRTP handshake (RFC 5764), which is the automatic key management RFC 3711 section 9.1 requires. It is self-contained and runs both sides over loopback:
+
+```
+node examples/dtls_srtp_example.js
+```
+
 ## New Steganography Examples
 
 The [steganography/](steganography/) directory contains examples demonstrating the steganography features of T140LLM, which allow hiding RTP packets within cover media:
@@ -15,7 +38,7 @@ The [steganography/](steganography/) directory contains examples demonstrating t
 - Custom steganography transports
 - Advanced encoding/decoding techniques
 
-See the [steganography/README.md](steganography/README.md) for more details.
+These examples need the optional `@agrathwohl/llm-steg` package. See [steganography/README.md](steganography/README.md) for the install steps.
 
 ### 1. Basic Demonstration (`demo.js`)
 
@@ -65,7 +88,16 @@ This script demonstrates the T.140 backspace support feature:
 - Simulates typing with edits/corrections using backspaces
 - Compares results with and without backspace processing enabled
 
-### 6. Custom Transport Example (`custom_transport_example.js`)
+### 6. DTLS-SRTP Example (`dtls_srtp_example.js`)
+
+This script demonstrates SRTP with automatic key management:
+
+- Runs a DTLS-SRTP handshake over loopback UDP, with no shared passphrase
+- Prints the negotiated protection profile, key sizes, and the peer certificate
+- Streams T.140 text encrypted with the negotiated keys
+- Self-contained: no receiver script needed
+
+### 7. Custom Transport Example (`custom_transport_example.js`)
 
 This script demonstrates using a custom transport implementation instead of the default UDP socket:
 

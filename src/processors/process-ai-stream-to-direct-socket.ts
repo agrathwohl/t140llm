@@ -1,3 +1,4 @@
+import createDebug from 'debug';
 import * as net from 'net';
 import {
   LLMMetadata,
@@ -7,6 +8,7 @@ import {
   TransportStream,
 } from '../interfaces';
 import { createRtpPacket } from '../rtp/create-rtp-packet';
+import { createT140Clock } from '../rtp/t140-clock';
 import {
   DEFAULT_T140_PAYLOAD_TYPE,
   MAX_METADATA_PAYLOAD_SIZE,
@@ -19,63 +21,66 @@ import {
   resolveStreamOptions,
 } from '../utils/stream-processor';
 
+const debug = createDebug('t140llm:direct-socket');
+
+/** RTP stream state shared by every stream attached to one direct socket transport. */
+export interface DirectSocketRtpState {
+  sequenceNumber: number;
+  timestamp: number;
+  ssrc: number;
+}
+
+function isTransportStream(transport: net.Socket | TransportStream): transport is TransportStream {
+  return typeof (transport as TransportStream).send === 'function';
+}
+
 /**
- * Attach a stream to an existing direct socket transport
+ * Attach a stream to an existing direct socket transport. Each text chunk is
+ * framed as one RTP packet and written to the socket, with no pacing.
  *
  * @param transport The existing transport (Socket or TransportStream)
  * @param stream The stream to attach
  * @param rtpConfig RTP configuration options
- * @param processorOptions Processor options for handling the stream
- * @param rtpState Optional RTP state to use (if not provided, will use defaults from rtpConfig)
+ * @param processorOptions Processor options; override the matching rtpConfig fields
+ * @param rtpState Optional RTP state to continue from (defaults from rtpConfig)
  */
 export function attachStreamToDirectSocketTransport(
   transport: net.Socket | TransportStream,
   stream: TextDataStream,
   rtpConfig: RtpConfig = {},
   processorOptions: ProcessorOptions = {},
-  rtpState?: { sequenceNumber: number; timestamp: number; ssrc: number }
+  rtpState?: DirectSocketRtpState
 ): void {
   const state = rtpState ?? {
     sequenceNumber: rtpConfig.initialSequenceNumber ?? 0,
     timestamp: rtpConfig.initialTimestamp ?? 0,
     ssrc: rtpConfig.ssrc ?? generateSecureSSRC(),
   };
-  const timestampIncrement = rtpConfig.timestampIncrement || 160;
-  const payloadType = rtpConfig.payloadType || DEFAULT_T140_PAYLOAD_TYPE;
+  const clock = createT140Clock(state.timestamp, rtpConfig.timestampIncrement);
+  const payloadType = rtpConfig.payloadType ?? DEFAULT_T140_PAYLOAD_TYPE;
 
-  const sendPacket = (packet: Buffer) => {
-    if (rtpConfig.customTransport || 'send' in transport) {
-      (transport as TransportStream).send(packet);
+  const sendPacket = (payload: string, metadataPacket = false): void => {
+    state.timestamp = clock.next();
+    const packet = createRtpPacket(state.sequenceNumber, state.timestamp, payload, {
+      payloadType,
+      metadataPacket,
+      ssrc: state.ssrc,
+    });
+    state.sequenceNumber = (state.sequenceNumber + 1) % RTP_MAX_SEQUENCE_NUMBER;
+
+    if (isTransportStream(transport)) {
+      transport.send(packet);
     } else {
-      (transport as net.Socket).write(packet);
+      transport.write(packet);
     }
   };
 
-  const sendMetadataPacket = (metadata: LLMMetadata) => {
-    const metadataJson = JSON.stringify({
-      type: 'metadata',
-      content: metadata,
-    });
+  const sendMetadataPacket = (metadata: LLMMetadata): void => {
+    const metadataJson = JSON.stringify({ type: 'metadata', content: metadata });
     if (Buffer.byteLength(metadataJson, 'utf-8') > MAX_METADATA_PAYLOAD_SIZE) {
       return;
     }
-    const metadataPacket = createRtpPacket(
-      state.sequenceNumber, state.timestamp, metadataJson,
-      { payloadType, ssrc: state.ssrc, metadataPacket: true }
-    );
-    sendPacket(metadataPacket);
-    state.sequenceNumber = (state.sequenceNumber + 1) % RTP_MAX_SEQUENCE_NUMBER;
-    state.timestamp += timestampIncrement;
-  };
-
-  const closeTransport = () => {
-    if (rtpConfig.customTransport?.close) {
-      rtpConfig.customTransport.close();
-    } else if ('close' in transport && typeof transport.close === 'function') {
-      transport.close();
-    } else if (transport instanceof net.Socket) {
-      transport.end();
-    }
+    sendPacket(metadataJson, true);
   };
 
   const options = resolveStreamOptions(processorOptions, {
@@ -83,29 +88,28 @@ export function attachStreamToDirectSocketTransport(
     handleMetadata: rtpConfig.handleMetadata,
     metadataCallback: rtpConfig.metadataCallback,
     sendMetadataOverTransport: rtpConfig.sendMetadataAsPackets,
+    onError: rtpConfig.onError,
   });
 
   attachStreamProcessor(stream, options, {
-    sendText: (text) => {
-      const rtpPacket = createRtpPacket(
-        state.sequenceNumber, state.timestamp, text,
-        { payloadType, ssrc: state.ssrc }
-      );
-      sendPacket(rtpPacket);
-      state.sequenceNumber = (state.sequenceNumber + 1) % RTP_MAX_SEQUENCE_NUMBER;
-      state.timestamp += timestampIncrement;
+    sendText: (text) => sendPacket(text),
+    sendMetadata: sendMetadataPacket,
+    close: () => {
+      if (isTransportStream(transport)) {
+        transport.close?.();
+      } else {
+        transport.end();
+      }
     },
-    sendMetadata: (metadata) => sendMetadataPacket(metadata),
-    close: closeTransport,
   });
 }
 
 /**
- * Creates a direct socket transport for T.140 RTP transmission
+ * Create a direct socket transport for T.140 RTP transmission.
  *
  * @param socketPath Path to the SEQPACKET socket
  * @param rtpConfig RTP configuration options
- * @returns The transport and a function to attach a stream to it
+ * @returns The transport, a function to attach a stream to it, and the shared RTP state
  */
 export function createDirectSocketTransport(
   socketPath: string = SEQPACKET_SOCKET_PATH,
@@ -116,35 +120,35 @@ export function createDirectSocketTransport(
     stream: TextDataStream,
     processorOptions?: ProcessorOptions
   ) => void;
-  rtpState: {
-    sequenceNumber: number;
-    timestamp: number;
-    ssrc: number;
-  };
+  rtpState: DirectSocketRtpState;
 } {
-  const transport =
-    rtpConfig.customTransport || net.createConnection(socketPath);
+  const transport = rtpConfig.customTransport ?? net.createConnection(socketPath);
+  if (!isTransportStream(transport)) {
+    // The socket exists before any stream is attached, so handle its errors
+    // here. Without this a refused connection would exit the process.
+    transport.on('error', (err) => {
+      debug('socket error: %O', err);
+      rtpConfig.onError?.(err);
+    });
+  }
 
-  const rtpState = {
-    sequenceNumber: rtpConfig.initialSequenceNumber || 0,
-    timestamp: rtpConfig.initialTimestamp || 0,
-    ssrc: rtpConfig.ssrc || generateSecureSSRC(),
+  const rtpState: DirectSocketRtpState = {
+    sequenceNumber: rtpConfig.initialSequenceNumber ?? 0,
+    timestamp: rtpConfig.initialTimestamp ?? 0,
+    ssrc: rtpConfig.ssrc ?? generateSecureSSRC(),
   };
 
-  const attachStream = (
-    stream: TextDataStream,
-    processorOptions: ProcessorOptions = {}
-  ) => {
-    attachStreamToDirectSocketTransport(
-      transport, stream, rtpConfig, processorOptions, rtpState
-    );
+  return {
+    transport,
+    rtpState,
+    attachStream: (stream, processorOptions = {}) => {
+      attachStreamToDirectSocketTransport(transport, stream, rtpConfig, processorOptions, rtpState);
+    },
   };
-
-  return { transport, attachStream, rtpState };
 }
 
 /**
- * Process an AI stream and send chunks as RTP directly to a SEQPACKET socket
+ * Stream an LLM response as RTP frames to a Unix SEQPACKET socket.
  *
  * @param stream The AI stream to process
  * @param socketPath Path to the SEQPACKET socket (ignored if customTransport is provided)
@@ -158,21 +162,12 @@ export function processAIStreamToDirectSocket(
   rtpConfig: RtpConfig = {},
   existingTransport?: net.Socket | TransportStream
 ): net.Socket | TransportStream {
-  const processorOptions: ProcessorOptions = {
-    processBackspaces: rtpConfig.processBackspaces,
-    handleMetadata: rtpConfig.handleMetadata,
-    metadataCallback: rtpConfig.metadataCallback,
-    sendMetadataOverTransport: rtpConfig.sendMetadataAsPackets,
-  };
-
   if (existingTransport) {
-    attachStreamToDirectSocketTransport(existingTransport, stream, rtpConfig, processorOptions);
+    attachStreamToDirectSocketTransport(existingTransport, stream, rtpConfig);
     return existingTransport;
   }
 
-  const { transport, attachStream } = createDirectSocketTransport(
-    socketPath, rtpConfig
-  );
-  attachStream(stream, processorOptions);
+  const { transport, attachStream } = createDirectSocketTransport(socketPath, rtpConfig);
+  attachStream(stream);
   return transport;
 }

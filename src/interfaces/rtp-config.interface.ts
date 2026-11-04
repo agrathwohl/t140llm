@@ -25,6 +25,7 @@ export interface RtpConfig {
   metadataCallback?: (metadata: LLMMetadata) => void; // Callback for processing metadata
   sendMetadataAsPackets?: boolean; // Send metadata as separate RTP packets
   metadataPayloadType?: number; // Optional different payload type for metadata
+  onError?: (error: Error) => void; // Called when the source stream fails
 
   // Multiplexing options
   multiplexEnabled?: boolean; // Enable multiplexing multiple streams

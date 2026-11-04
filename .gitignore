@@ -24,6 +24,12 @@ node_modules/
 
 # Do not ignore
 !rollup.config.js
+!src/**/*.d.ts
+
+# agent state
+.claude/
+.omc/
+.serena/
 
 # VitePress
 docs/.vitepress/dist

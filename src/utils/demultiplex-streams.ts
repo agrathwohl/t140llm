@@ -1,11 +1,12 @@
 import { EventEmitter } from 'events';
 import { LLMMetadata } from '../interfaces';
 import {
+  DEFAULT_RED_PAYLOAD_TYPE,
+  METADATA_PACKET_PREFIX,
   MULTIPLEX_STREAM_DELIMITER,
-  RTP_CSRC_ENTRY_SIZE,
   RTP_HEADER_SIZE,
-  RTP_OFFSET_CSRC,
 } from './constants';
+import { extractT140Text } from './parse-red-packet';
 
 /**
  * Interface for demultiplexed stream data
@@ -63,9 +64,16 @@ export class DemultiplexedStreamImpl extends EventEmitter implements Demultiplex
  */
 export class T140StreamDemultiplexer extends EventEmitter {
   private streams: Map<string, DemultiplexedStreamImpl> = new Map();
+  private readonly redPayloadType: number;
 
-  constructor() {
+  /**
+   * @param options.redPayloadType Payload type the sender uses for text/red.
+   *   Packets with this type are parsed per RFC 2198 and only the primary
+   *   T140block is delivered. Default 98.
+   */
+  constructor(options: { redPayloadType?: number } = {}) {
     super();
+    this.redPayloadType = options.redPayloadType ?? DEFAULT_RED_PAYLOAD_TYPE;
   }
 
   /**
@@ -76,33 +84,22 @@ export class T140StreamDemultiplexer extends EventEmitter {
    */
   processPacket(data: Buffer, useCSRC: boolean = false): void {
     try {
-      let streamId: string | undefined;
+      // Reads plain text/t140 and text/red alike, skipping the CSRC list, any
+      // header extension, and trailing padding (RFC 3550 §5.1, RFC 2198 §3).
+      const payloadStr = extractT140Text(data, this.redPayloadType);
+      const csrcCount = data[0] & 0x0f;
+
       if (useCSRC) {
-        const firstByte = data[0];
-        // Extract CSRC count (CC field, bottom 4 bits per RFC 3550)
-        const csrcCount = firstByte & 0x0F;
-        if (csrcCount > 0) {
-          // CSRC identifiers start at byte 12 in the RTP header per RFC 3550
-          const csrcId = data.readUInt32BE(RTP_OFFSET_CSRC);
-          streamId = `csrc:${csrcId}`;
-          const headerSize = RTP_HEADER_SIZE + (csrcCount * RTP_CSRC_ENTRY_SIZE);
-          const payload = data.slice(headerSize);
-          const textContent = payload.toString('utf-8');
-          this._processText(streamId, textContent);
+        if (csrcCount === 0) {
+          this.emit('error', new Error('No CSRC identifiers found in packet'));
           return;
         }
-        // No CSRC, can't identify stream
-        this.emit('error', new Error('No CSRC identifiers found in packet'));
+        this._processText(`csrc:${data.readUInt32BE(RTP_HEADER_SIZE)}`, payloadStr);
         return;
       }
-      // Calculate dynamic RTP header size per RFC 3550
-      const firstByte = data[0];
-      const csrcCount = firstByte & 0x0F;
-      const headerSize = RTP_HEADER_SIZE + (csrcCount * RTP_CSRC_ENTRY_SIZE);
-      const payloadWithPrefix = data.slice(headerSize);
-      const payloadStr = payloadWithPrefix.toString('utf-8');
-      if (payloadStr.startsWith('MD:')) {
-        const metadataContent = payloadStr.substring(3);
+
+      if (payloadStr.startsWith(METADATA_PACKET_PREFIX)) {
+        const metadataContent = payloadStr.substring(METADATA_PACKET_PREFIX.length);
         try {
           const metadata = JSON.parse(metadataContent);
           if (metadata.streamId) {
@@ -116,16 +113,14 @@ export class T140StreamDemultiplexer extends EventEmitter {
 
         return;
       }
-      // Check for stream identifier prefix
       const delimiterIndex = payloadStr.indexOf(MULTIPLEX_STREAM_DELIMITER);
       if (delimiterIndex > 0) {
-        streamId = payloadStr.substring(0, delimiterIndex);
-        const textContent = payloadStr.substring(delimiterIndex + 1);
-        this._processText(streamId, textContent);
+        this._processText(
+          payloadStr.substring(0, delimiterIndex),
+          payloadStr.substring(delimiterIndex + 1)
+        );
       } else {
-        // No identifier found, treat as default stream
-        streamId = 'default';
-        this._processText(streamId, payloadStr);
+        this._processText('default', payloadStr);
       }
     } catch (err) {
       this.emit('error', new Error(`Error processing packet: ${err}`));
@@ -150,6 +145,13 @@ export class T140StreamDemultiplexer extends EventEmitter {
    * Process text data for a specific stream
    */
   private _processText(streamId: string, text: string): void {
+    // An empty T140block signals the start of an idle period (RFC 4103 §5.2).
+    // It has nothing to display, so create the stream but emit no data.
+    if (text === '') {
+      this._getOrCreateStream(streamId);
+      return;
+    }
+
     const stream = this._getOrCreateStream(streamId);
 
     stream.pushText(text);

@@ -6,7 +6,7 @@
  * telephone line that uses 5-bit Baudot/ITA2 encoding.
  */
 
-const { processAIStreamToRtp, T140RtpTransport } = require("../dist");
+const { processAIStreamToRtp, extractT140Text, T140RtpTransport } = require("../dist");
 const { EventEmitter } = require("events");
 
 /**
@@ -488,7 +488,8 @@ class BaudotTTYTransport {
 
     // Get the text payload (skip the 12-byte RTP header)
     if (data.length > 12) {
-      const payload = data.slice(12).toString("utf8");
+      // Handles text/red (the default) and plain text/t140 alike
+      const payload = extractT140Text(data);
       console.log(`[${this.name}] T.140 Payload: "${payload}"`);
 
       // Convert to Baudot/TTY codes

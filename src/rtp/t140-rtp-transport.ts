@@ -1,108 +1,92 @@
 import * as dgram from 'dgram';
 import { EventEmitter } from 'events';
+import { isIP } from 'net';
 import { RtpPacket, SrtpSession } from 'werift-rtp';
+import { RtpConfig, SrtpConfig, TransportStream } from '../interfaces';
 import {
-  RtpConfig,
-  SrtpConfig,
-  TransportStream,
-} from '../interfaces';
-import {
-  BIT_SHIFT_128,
-  BIT_SHIFT_16,
-  BIT_SHIFT_32,
-  BIT_SHIFT_64,
   DEFAULT_FEC_GROUP_SIZE,
   DEFAULT_FEC_PAYLOAD_TYPE,
   DEFAULT_REDUNDANCY_LEVEL,
   DEFAULT_RED_PAYLOAD_TYPE,
   DEFAULT_RTP_PORT,
   DEFAULT_T140_PAYLOAD_TYPE,
-  DEFAULT_TIMESTAMP_INCREMENT,
-  FEC_EXT_OFFSET_FLAGS,
-  FEC_EXT_OFFSET_LENGTH,
-  FEC_EXT_OFFSET_MASK,
-  FEC_EXT_OFFSET_MEDIA_PT,
-  FEC_EXT_OFFSET_SN_BASE,
-  FEC_EXT_OFFSET_TIMESTAMP,
-  FEC_HEADER_EXTENSION_SIZE,
-  RED_F_BIT_FLAG,
-  RED_HEADER_SIZE_PER_BLOCK,
+  FEC_HEADER_SIZE,
+  FEC_LEVEL_HEADER_SIZE,
+  FEC_MAX_GROUP_SIZE,
   RED_MAX_BLOCK_LENGTH,
-  RED_OFFSET_BLOCK_LENGTH,
-  RED_OFFSET_TIMESTAMP_OFFSET,
-  RED_PRIMARY_HEADER_SIZE,
+  RED_MAX_TIMESTAMP_OFFSET,
+  RTP_CSRC_ENTRY_SIZE,
   RTP_HEADER_SIZE,
   RTP_MAX_SEQUENCE_NUMBER,
-  RTP_OFFSET_PAYLOAD_TYPE,
-  RTP_OFFSET_SEQUENCE,
-  RTP_OFFSET_SSRC,
-  RTP_OFFSET_TIMESTAMP,
-  RTP_OFFSET_VERSION,
-  RTP_VERSION,
+  SEND_INTERVAL_MS,
+  SRTP_AEAD_SALT_SIZE,
+  SRTP_MASTER_KEY_SIZE,
+  SRTP_MASTER_SALT_SIZE,
 } from '../utils/constants';
 import { ErrorFactory } from '../utils/error-factory';
 import { generateSecureSSRC } from '../utils/security';
-import { createRtpPacket } from './create-rtp-packet';
+import { buildRtpHeader, createRtpPacket, RtpHeaderFields } from './create-rtp-packet';
+import { createT140Clock, T140Clock } from './t140-clock';
+
+/** A T140block already sent as primary data, kept for redundancy (RFC 4103 §4.2). */
+interface SentBlock {
+  payload: Buffer;
+  timestamp: number;
+}
+
+/** Redundancy history of one stream (one per `streamIdentifier`, so sources never mix). */
+interface RedundancyHistory {
+  blocks: SentBlock[];
+  lastOptions?: Partial<RtpConfig>;
+}
+
+/** A packet waiting to be covered by the next FEC packet (RFC 5109). */
+interface ProtectedPacket {
+  packet: Buffer;
+  sequenceNumber: number;
+  timestamp: number;
+}
+
+const HOSTNAME_PATTERN =
+  /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$/;
+const MAX_UINT16 = 0xffff;
+const MAX_UINT32 = 0xffffffff;
+const MAX_PAYLOAD_TYPE = 127;
+
+function assertRange(name: string, value: number | undefined, min: number, max: number): void {
+  if (value !== undefined && (!Number.isInteger(value) || value < min || value > max)) {
+    throw new Error(`${name} must be an integer between ${min} and ${max}`);
+  }
+}
 
 /**
- * Class to manage RTP/SRTP connections for sending T.140 data
+ * Sends T.140 text as RTP or SRTP (RFC 4103, https://www.rfc-editor.org/rfc/rfc4103).
+ *
+ * One instance is one text/t140 stream: a fixed SSRC, a 16-bit sequence
+ * counter, and a 1000 Hz timestamp clock. Every sendText() call becomes one
+ * packet. Optional redundancy (text/red, RFC 2198) and generic FEC (RFC 5109)
+ * protect against packet loss.
  *
  * Events:
- * - 'error': Emitted when an error occurs. Error object contains:
- *   - type: T140RtpErrorType - the type of error
- *   - message: string - human-readable error message
- *   - cause?: Error - original error that caused this error (if available)
- *
- * Error Types:
- * - NETWORK_ERROR: UDP socket or network-related errors
- *   - Occurs when sending packets fails due to network issues
- *   - Socket connection issues
- *
- * - ENCRYPTION_ERROR: SRTP encryption errors
- *   - Occurs when encryption or decryption fails
- *   - Key generation or management errors
- *
- * - FEC_ERROR: Forward Error Correction errors
- *   - Occurs when FEC packet creation fails
- *   - Invalid FEC parameters or configurations
- *
- * - INVALID_CONFIG: Invalid configuration errors
- *   - Occurs when the provided configuration is invalid
- *   - Missing required parameters
- *
- * - RATE_LIMIT_ERROR: Rate limiting errors
- *   - Occurs when rate limit handling encounters issues
- *
- * - RESOURCE_ERROR: Resource allocation/deallocation errors
- *   - Occurs during socket creation/closing
- *   - Memory allocation issues
- *
- * Example usage:
- * ```typescript
- * const transport = new T140RtpTransport('127.0.0.1', 5004);
- * transport.on('error', (err) => {
- *   console.error(`Error (${err.type}): ${err.message}`);
- *   // Handle specific error types
- *   if (err.type === T140RtpErrorType.NETWORK_ERROR) {
- *     // Handle network error
- *   }
- * });
- * ```
+ * - 'error' (T140RtpError): network, encryption, FEC, configuration, or
+ *   resource failures. The send path never throws.
  */
 export class T140RtpTransport extends EventEmitter {
-  private seqNum: number;
-  private timestamp: number;
-  private config: RtpConfig;
+  private readonly config: RtpConfig;
+  private readonly clock: T140Clock;
+  private readonly remoteAddress: string;
+  private readonly remotePort: number;
+  private readonly udpSocket?: dgram.Socket;
+  private readonly customTransport?: TransportStream;
   private srtpSession?: SrtpSession;
-  private udpSocket?: dgram.Socket;
-  private customTransport?: TransportStream;
-  private remoteAddress: string;
-  private remotePort: number;
-  private packetBuffer: Buffer[] = [];
-  private packetSequenceNumbers: number[] = [];
-  private packetTimestamps: number[] = [];
-  private fecCounter: number = 0;
-  private redPackets: Buffer[] = [];
+  private srtpRequired = false;
+  private closed = false;
+  private seqNum: number;
+  /** FEC packets have their own sequence space (RFC 5109 §7.2). */
+  private fecSeqNum: number;
+  private fecGroup: ProtectedPacket[] = [];
+  private redHistories: Map<string, RedundancyHistory> = new Map();
+  private redDrainTimer: NodeJS.Timeout | null = null;
 
   constructor(
     remoteAddress: string,
@@ -112,529 +96,361 @@ export class T140RtpTransport extends EventEmitter {
     super();
 
     this.customTransport = config.customTransport;
-
-    // If a custom transport is provided, we don't need to validate address and port
-    // but we still store them for compatibility
+    if (this.customTransport && typeof this.customTransport.send !== 'function') {
+      throw new Error(
+        'customTransport must implement send(data, callback). ' +
+        'To reuse an existing T140RtpTransport, pass it as the existingTransport argument instead.'
+      );
+    }
     if (!this.customTransport) {
       if (!remoteAddress) {
-        throw new Error(
-          'Remote address is required when no custom transport is provided'
-        );
+        throw new Error('Remote address is required when no custom transport is provided');
       }
-
-      // Basic validation of the remote address format
-      // This performs basic IPv4 validation and rejects obviously invalid addresses
-      if (
-        !/^(\d{1,3}\.){3}\d{1,3}$/.test(remoteAddress) &&
-        remoteAddress !== 'localhost' &&
-        !/^\[?[0-9a-fA-F:]+\]?$/.test(remoteAddress) &&
-        !/^[a-zA-Z0-9][a-zA-Z0-9.-]*[a-zA-Z0-9]$/.test(remoteAddress)
-      ) {
+      if (isIP(remoteAddress) === 0 && !HOSTNAME_PATTERN.test(remoteAddress)) {
         throw new Error('Invalid remote address format');
       }
-
-      if (remotePort < 0 || remotePort > 65535) {
-        throw new Error('Port number must be between 0 and 65535');
-      }
+      assertRange('Port number', remotePort, 1, MAX_UINT16);
     }
+
+    assertRange('payloadType', config.payloadType, 0, MAX_PAYLOAD_TYPE);
+    assertRange('redPayloadType', config.redPayloadType, 0, MAX_PAYLOAD_TYPE);
+    assertRange('fecPayloadType', config.fecPayloadType, 0, MAX_PAYLOAD_TYPE);
+    assertRange('ssrc', config.ssrc, 0, MAX_UINT32);
+    assertRange('initialSequenceNumber', config.initialSequenceNumber, 0, MAX_UINT16);
+    assertRange('initialTimestamp', config.initialTimestamp, 0, MAX_UINT32);
+    assertRange('fecGroupSize', config.fecGroupSize, 1, FEC_MAX_GROUP_SIZE);
+    assertRange('redundancyLevel', config.redundancyLevel, 0, MAX_UINT16);
 
     this.remoteAddress = remoteAddress;
     this.remotePort = remotePort;
-    const secureSSRC = generateSecureSSRC();
-
     this.config = {
+      ...config,
       payloadType: config.payloadType ?? DEFAULT_T140_PAYLOAD_TYPE,
-      // Use provided SSRC (if any), otherwise use secure random SSRC
-      ssrc: config.ssrc ?? secureSSRC,
-      initialSequenceNumber: config.initialSequenceNumber ?? 0,
-      initialTimestamp: config.initialTimestamp ?? 0,
-      timestampIncrement: config.timestampIncrement ?? DEFAULT_TIMESTAMP_INCREMENT,
+      ssrc: config.ssrc ?? generateSecureSSRC(),
       fecEnabled: config.fecEnabled ?? false,
       fecPayloadType: config.fecPayloadType ?? DEFAULT_FEC_PAYLOAD_TYPE,
       fecGroupSize: config.fecGroupSize ?? DEFAULT_FEC_GROUP_SIZE,
-      charRateLimit: config.charRateLimit ?? 0, // 0 means no rate limit
-      redEnabled: config.redEnabled ?? false, // Redundancy disabled by default
+      redEnabled: config.redEnabled ?? true,
       redPayloadType: config.redPayloadType ?? DEFAULT_RED_PAYLOAD_TYPE,
       redundancyLevel: config.redundancyLevel ?? DEFAULT_REDUNDANCY_LEVEL,
-      customTransport: config.customTransport,
     };
-
-    this.seqNum = this.config.initialSequenceNumber!;
-    this.timestamp = this.config.initialTimestamp!;
+    this.seqNum = config.initialSequenceNumber ?? 0;
+    this.fecSeqNum = this.seqNum;
+    this.clock = createT140Clock(config.initialTimestamp ?? 0, config.timestampIncrement);
 
     if (!this.customTransport) {
-      try {
-        this.udpSocket = dgram.createSocket('udp4');
-
-        this.udpSocket.on('error', (err) => {
-          this.emit('error', ErrorFactory.NETWORK('UDP socket error', err));
-        });
-      } catch (err) {
-        throw new Error(`Failed to create UDP socket: ${err}`);
-      }
+      this.udpSocket = dgram.createSocket(isIP(remoteAddress) === 6 ? 'udp6' : 'udp4');
+      this.udpSocket.on('error', (err) => {
+        this.emit('error', ErrorFactory.NETWORK('UDP socket error', err));
+      });
     }
   }
 
   /**
-   * Initialize and configure SRTP
+   * Enable SRTP (RFC 3711) for every packet sent after this call.
+   *
+   * Supply the keys yourself, or get them from a DTLS-SRTP handshake with
+   * `negotiateDtlsSrtp` (RFC 5764), which is the automatic key management
+   * RFC 3711 §9.1 requires.
+   *
+   * Throws on an unusable configuration instead of sending plaintext. Calling
+   * it again on a transport that already has a session is a no-op, because
+   * a new session would restart the rollover counter and repeat keystream.
    */
   setupSrtp(srtpConfig: SrtpConfig): void {
-    try {
-      if (!srtpConfig.masterKey || !srtpConfig.masterSalt) {
-        this.emit('error', ErrorFactory.INVALID_CONFIG(
-          'SRTP configuration missing required master key or salt'
-        ));
-        return;
-      }
+    if (this.srtpSession) return;
+    this.srtpRequired = true;
 
-      // Profile 1 = SRTP_AES128_CM_HMAC_SHA1_80 (default)
+    const profile = srtpConfig.profile ?? 0x0001; // SRTP_AES128_CM_HMAC_SHA1_80
+    const saltSize = profile === 0x0007 ? SRTP_AEAD_SALT_SIZE : SRTP_MASTER_SALT_SIZE;
+    const remoteMasterKey = srtpConfig.remoteMasterKey ?? srtpConfig.masterKey;
+    const remoteMasterSalt = srtpConfig.remoteMasterSalt ?? srtpConfig.masterSalt;
+
+    for (const [name, value, size] of [
+      ['masterKey', srtpConfig.masterKey, SRTP_MASTER_KEY_SIZE],
+      ['masterSalt', srtpConfig.masterSalt, saltSize],
+      ['remoteMasterKey', remoteMasterKey, SRTP_MASTER_KEY_SIZE],
+      ['remoteMasterSalt', remoteMasterSalt, saltSize],
+    ] as [string, Buffer | undefined, number][]) {
+      if (!Buffer.isBuffer(value)) {
+        throw new Error(`SRTP ${name} must be a Buffer`);
+      }
+      if (value.length !== size) {
+        throw new Error(`SRTP ${name} must be ${size} bytes for profile 0x${profile.toString(16).padStart(4, '0')}`);
+      }
+    }
+
+    if (this.config.fecEnabled) {
+      // FEC shares the media SSRC and would reuse SRTP keystream in one session
+      // (RFC 5109 §14.1, RFC 3711 §9.1). Use redundancy instead.
+      throw new Error('fecEnabled cannot be combined with SRTP; use redEnabled');
+    }
+
+    try {
       this.srtpSession = new SrtpSession({
+        profile,
         keys: {
+          remoteMasterKey,
+          remoteMasterSalt,
           localMasterKey: srtpConfig.masterKey,
           localMasterSalt: srtpConfig.masterSalt,
-          remoteMasterKey: srtpConfig.masterKey,
-          remoteMasterSalt: srtpConfig.masterSalt,
         },
-        profile: srtpConfig.profile ?? 1,
       });
     } catch (err) {
-      this.emit('error', ErrorFactory.ENCRYPTION(
-        'Failed to initialize SRTP session',
-        err as Error
-      ));
+      throw new Error(`Failed to initialize SRTP session: ${(err as Error).message}`);
     }
   }
 
   /**
-   * Create a Forward Error Correction (FEC) packet according to RFC 5109
-   * Using XOR-based FEC for a group of RTP packets
-   */
-  private _createFecPacket(
-    packets: Buffer[],
-    sequenceNumbers: number[],
-    timestamps: number[]
-  ): Buffer {
-    if (packets.length === 0) {
-      this.emit('error', ErrorFactory.FEC(
-        'Cannot create FEC packet from empty packet list'
-      ));
-      return Buffer.alloc(0);
-    }
-
-    if (
-      packets.length !== sequenceNumbers.length ||
-      packets.length !== timestamps.length
-    ) {
-      this.emit('error', ErrorFactory.FEC(
-        'Mismatch in FEC packet parameters: packets, sequence numbers, and timestamps must have the same length'
-      ));
-      return Buffer.alloc(0);
-    }
-
-    // We need to XOR all RTP headers and payloads
-    // First, create the FEC header
-    const version = RTP_VERSION;
-    const padding = 0;
-    const extension = 0;
-    const csrcCount = 0;
-    const marker = 0;
-    const payloadType = this.config.fecPayloadType!;
-    const ssrc = this.config.ssrc!;
-    // Use the highest sequence number + 1 for the FEC packet
-    const maxSeqNum = Math.max(...sequenceNumbers);
-    const fecSeqNum = (maxSeqNum + 1) % RTP_MAX_SEQUENCE_NUMBER;
-    // Use the highest timestamp for the FEC packet
-    const fecTimestamp = Math.max(...timestamps);
-
-    const fecHeader = Buffer.alloc(RTP_HEADER_SIZE);
-    fecHeader.writeUInt8(
-      version * BIT_SHIFT_64 + padding * BIT_SHIFT_32 + extension * BIT_SHIFT_16 + csrcCount,
-      RTP_OFFSET_VERSION
-    );
-    fecHeader.writeUInt8(marker * BIT_SHIFT_128 + payloadType, RTP_OFFSET_PAYLOAD_TYPE);
-    fecHeader.writeUInt16BE(fecSeqNum, RTP_OFFSET_SEQUENCE);
-    fecHeader.writeUInt32BE(fecTimestamp, RTP_OFFSET_TIMESTAMP);
-    fecHeader.writeUInt32BE(ssrc, RTP_OFFSET_SSRC);
-
-    // FEC Header Extension - RFC 5109 Section 6.1
-    const fecHeaderExt = Buffer.alloc(FEC_HEADER_EXTENSION_SIZE);
-    // E bit: Extension bit (always 0 for simple XOR-based FEC)
-    // L bit: Long mask bit (0 for now, fewer than 16 packets)
-    // P bit: Protection length field present (0 for now)
-    // X bit: Reserved (0)
-    // CC bits: CSRC count from the FEC header
-    // M bit: RTP marker bit state from the FEC header
-    // PT bits: FEC payload type
-    fecHeaderExt.writeUInt8(0, FEC_EXT_OFFSET_FLAGS); // E, L, P, X, CC, M bits
-    fecHeaderExt.writeUInt8(this.config.payloadType!, FEC_EXT_OFFSET_MEDIA_PT); // Original media PT
-    // SN base: first sequence number this FEC packet protects
-    fecHeaderExt.writeUInt16BE(sequenceNumbers[0], FEC_EXT_OFFSET_SN_BASE);
-    // Timestamp recovery field: XOR of all protected packets' timestamps (RFC 5109)
-    let tsRecovery = 0;
-    let lenRecovery = 0;
-    for (let i = 0; i < packets.length; i += 1) {
-      tsRecovery ^= timestamps[i];
-      lenRecovery ^= (packets[i].length - RTP_HEADER_SIZE);
-    }
-    fecHeaderExt.writeUInt32BE(tsRecovery >>> 0, FEC_EXT_OFFSET_TIMESTAMP);
-    // Length recovery field: XOR of all protected packets' payload lengths
-    fecHeaderExt.writeUInt16BE(lenRecovery & 0xFFFF, FEC_EXT_OFFSET_LENGTH);
-    // Mask: which packets this FEC packet protects (bits)
-    // For simplicity, we use a continuous block of packets
-    // Each bit represents one packet being protected
-    const mask = Buffer.alloc(2);
-    // Set bits for each protected packet using bitwise shift (correct for groups <= 16)
-    mask.writeUInt16BE(((1 << packets.length) - 1) & 0xFFFF, 0);
-    mask.copy(fecHeaderExt, FEC_EXT_OFFSET_MASK, 0, 2);
-
-    // Now create the FEC payload
-    // This requires XORing the payloads of all protected packets
-    // First, find the largest packet to determine payload size
-    const maxPayloadLength = Math.max(
-      ...packets.map((p) => {
-        return p.length - RTP_HEADER_SIZE;
-      })
-    );
-    const fecPayload = Buffer.alloc(maxPayloadLength);
-
-    // XOR all payloads together
-    for (const packet of packets) {
-      const payloadOffset = RTP_HEADER_SIZE;
-      const payloadLength = packet.length - payloadOffset;
-      for (let j = 0; j < payloadLength; j += 1) {
-        // XOR byte-by-byte for FEC parity calculation (RFC 5109)
-        if (j < fecPayload.length) {
-          // tslint:disable-next-line:no-bitwise
-          fecPayload[j] ^= packet[payloadOffset + j];
-        }
-      }
-    }
-
-    // Combine FEC RTP header, FEC header extension, and FEC payload
-    return Buffer.concat([fecHeader, fecHeaderExt, fecPayload]);
-  }
-
-  /**
-   * Create a RED packet with redundancy according to RFC 2198
-   */
-  private _createRedPacket(
-    primaryData: string,
-    redundantPackets: Buffer[],
-    markerBit?: boolean
-  ): Buffer {
-    if (!this.config.redEnabled || redundantPackets.length === 0) {
-      return createRtpPacket(this.seqNum, this.timestamp, primaryData, {
-        payloadType: this.config.payloadType,
-        ssrc: this.config.ssrc,
-      });
-    }
-
-    const redundancyLevel = Math.min(
-      redundantPackets.length,
-      this.config.redundancyLevel || DEFAULT_REDUNDANCY_LEVEL
-    );
-
-    const rtpHeader = Buffer.alloc(RTP_HEADER_SIZE);
-    const version = RTP_VERSION;
-    const padding = 0;
-    const extension = 0;
-    const csrcCount = 0;
-    const marker = markerBit ? 1 : 0;
-    const payloadType = this.config.redPayloadType!;
-    const ssrc = this.config.ssrc!;
-
-    rtpHeader.writeUInt8(
-      version * BIT_SHIFT_64 + padding * BIT_SHIFT_32 + extension * BIT_SHIFT_16 + csrcCount,
-      RTP_OFFSET_VERSION
-    );
-    rtpHeader.writeUInt8(marker * BIT_SHIFT_128 + payloadType, RTP_OFFSET_PAYLOAD_TYPE);
-    rtpHeader.writeUInt16BE(this.seqNum, RTP_OFFSET_SEQUENCE);
-    rtpHeader.writeUInt32BE(this.timestamp, RTP_OFFSET_TIMESTAMP);
-    rtpHeader.writeUInt32BE(ssrc, RTP_OFFSET_SSRC);
-
-    // Create RED headers and payloads
-    // Format for each redundant block:
-    // 1 byte: F(1) + Block PT(7)
-    // 2 bytes: Timestamp offset (uint16)
-    // 1 byte: Block length (uint8)
-    // For the primary data (last block):
-    // 1 byte: F(0) + Block PT(7)
-
-    const redHeaders = Buffer.alloc(
-      redundancyLevel * RED_HEADER_SIZE_PER_BLOCK + RED_PRIMARY_HEADER_SIZE
-    );
-    let offset = 0;
-
-    // Add headers for redundant blocks
-    for (let i = 0; i < redundancyLevel; i += 1) {
-      // Most recent redundant packet first
-      const packet = redundantPackets[redundantPackets.length - 1 - i];
-
-      const redPacketTimestamp = packet.readUInt32BE(RTP_OFFSET_TIMESTAMP);
-      // 16-bit value using modulo instead of bitwise AND
-      const timestampOffset = (this.timestamp - redPacketTimestamp) % RTP_MAX_SEQUENCE_NUMBER;
-
-      const payloadLength = Math.min(packet.length - RTP_HEADER_SIZE, RED_MAX_BLOCK_LENGTH);
-
-      // F bit = 1 (more blocks follow)
-      redHeaders.writeUInt8(
-        RED_F_BIT_FLAG + this.config.payloadType!,
-        offset
-      ); // F=1 + block PT
-      redHeaders.writeUInt16BE(
-        timestampOffset,
-        offset + RED_OFFSET_TIMESTAMP_OFFSET
-      ); // Timestamp offset
-      redHeaders.writeUInt8(
-        payloadLength,
-        offset + RED_OFFSET_BLOCK_LENGTH
-      ); // Block length
-      offset += RED_HEADER_SIZE_PER_BLOCK;
-    }
-
-    // Add header for primary data (F bit = 0, no timestamp offset, no length)
-    redHeaders.writeUInt8(this.config.payloadType!, offset); // F=0 + block PT
-
-    const primaryPayload = Buffer.from(primaryData, 'utf-8');
-
-    const buffers = [rtpHeader, redHeaders];
-
-    // Add redundant payloads (skipping their RTP headers)
-    for (let i = 0; i < redundancyLevel; i += 1) {
-      const packet = redundantPackets[redundantPackets.length - 1 - i];
-      const payload = packet.slice(RTP_HEADER_SIZE);
-      buffers.push(payload);
-    }
-
-    buffers.push(primaryPayload);
-
-    return Buffer.concat(buffers);
-  }
-
-  /**
-   * Send text data as T.140 over RTP or SRTP
+   * Send one T140block as one RTP packet (RFC 4103 §3).
    *
-   * @param text Text to send
-   * @param options Optional overrides for this packet only
+   * @param text UTF-8 text. Empty text sends an empty T140block (RFC 4103 §5.2).
+   * @param options Per-packet overrides of the transport config, for example
+   *   `markerBit` for the first packet after an idle period.
    */
   sendText(text: string, options?: Partial<RtpConfig>): void {
-    // Apply options as overrides to the config for this packet
-    const packetOptions = options ? { ...this.config, ...options } : this.config;
+    if (this.closed) return;
+    const opts = options ? { ...this.config, ...options } : this.config;
 
-    let packet: Buffer;
-    if (packetOptions.redEnabled && this.redPackets.length > 0) {
-      const redPacket = this._createRedPacket(text, this.redPackets, packetOptions.markerBit);
+    const sequenceNumber = this.seqNum;
+    this.seqNum = (this.seqNum + 1) % RTP_MAX_SEQUENCE_NUMBER;
+    const timestamp = this.clock.next();
 
-      // Store the packet for future redundancy use
-      const normalPacket = createRtpPacket(this.seqNum, this.timestamp, text, {
-        payloadType: packetOptions.payloadType,
-        ssrc: packetOptions.ssrc,
-        multiplexEnabled: packetOptions.multiplexEnabled,
-        streamIdentifier: packetOptions.streamIdentifier,
-        csrcList: packetOptions.csrcList,
-        useCsrcForStreamId: packetOptions.useCsrcForStreamId,
-        markerBit: packetOptions.markerBit,
-      });
-
-      // Keep original non-RED packet for redundancy
-      this.redPackets.push(Buffer.from(normalPacket));
-
-      if (this.redPackets.length > packetOptions.redundancyLevel!) {
-        this.redPackets.shift();
-      }
-
-      packet = redPacket;
-    } else {
-      const rtpPacket = createRtpPacket(this.seqNum, this.timestamp, text, {
-        payloadType: packetOptions.payloadType,
-        ssrc: packetOptions.ssrc,
-        multiplexEnabled: packetOptions.multiplexEnabled,
-        streamIdentifier: packetOptions.streamIdentifier,
-        csrcList: packetOptions.csrcList,
-        useCsrcForStreamId: packetOptions.useCsrcForStreamId,
-        markerBit: packetOptions.markerBit,
-      });
-
-      // Store for future redundancy use if RED is enabled
-      if (packetOptions.redEnabled) {
-        this.redPackets.push(Buffer.from(rtpPacket));
-
-        if (this.redPackets.length > packetOptions.redundancyLevel!) {
-          this.redPackets.shift();
-        }
-      }
-
-      packet = rtpPacket;
-    }
-
-    let finalPacket: Buffer;
-    try {
-      if (this.srtpSession) {
-        const rtp = RtpPacket.deSerialize(packet);
-        finalPacket = this.srtpSession.encrypt(rtp.payload, rtp.header);
-      } else {
-        finalPacket = packet;
-      }
-    } catch (err) {
-      this.emit('error', ErrorFactory.ENCRYPTION(
-        'Failed to encrypt packet with SRTP - packet not sent',
-        err as Error
-      ));
-      // Don't fall back to unencrypted - abort the send operation for security
-      return;
-    }
-
-    this._sendPacket(finalPacket, (err) => {
-      if (err) {
-        this.emit('error', ErrorFactory.NETWORK('Failed to send RTP packet', err));
-      }
+    const mediaPacket = createRtpPacket(sequenceNumber, timestamp, text, {
+      payloadType: opts.payloadType,
+      ssrc: opts.ssrc,
+      markerBit: opts.markerBit,
+      multiplexEnabled: opts.multiplexEnabled,
+      streamIdentifier: opts.streamIdentifier,
+      csrcList: opts.csrcList,
+      useCsrcForStreamId: opts.useCsrcForStreamId,
     });
 
-    // If FEC is enabled, add this packet to the buffer for FEC calculation
-    if (this.config.fecEnabled) {
-      // Reuse the packet already created above instead of creating a duplicate
-      // In the RED branch, normalPacket was created; in the non-RED branch, rtpPacket was.
-      // We use the pre-encryption `packet` variable which is the correct RTP packet.
-      this.packetBuffer.push(Buffer.from(packet));
-      this.packetSequenceNumbers.push(this.seqNum);
-      this.packetTimestamps.push(this.timestamp);
-      this.fecCounter += 1;
+    let packet = mediaPacket;
+    if (opts.redEnabled) {
+      const headerLength = RTP_HEADER_SIZE + (opts.csrcList?.length ?? 0) * RTP_CSRC_ENTRY_SIZE;
+      const primary = mediaPacket.subarray(headerLength);
+      const history = this._redHistory(opts.streamIdentifier);
+      history.lastOptions = options;
+      packet = this._buildRedPacket(primary, history.blocks, {
+        sequenceNumber,
+        timestamp,
+        marker: opts.markerBit === true,
+        payloadType: opts.redPayloadType!,
+        ssrc: opts.ssrc!,
+        csrcList: opts.csrcList,
+      }, opts.payloadType!, opts.redundancyLevel!);
+      this._rememberForRedundancy(history, primary, timestamp, opts.redundancyLevel!);
+      this._scheduleRedundancyDrain();
+    }
 
-      // Check if we've reached the group size to send an FEC packet
-      if (this.fecCounter >= this.config.fecGroupSize!) {
-        const fecPacket = this._createFecPacket(
-          this.packetBuffer,
-          this.packetSequenceNumbers,
-          this.packetTimestamps
-        );
+    this._encryptAndSend(packet, 'RTP packet');
 
-        if (fecPacket.length > 0) {
-          let finalFecPacket: Buffer;
-          try {
-            if (this.srtpSession) {
-              const fecRtp = RtpPacket.deSerialize(fecPacket);
-              finalFecPacket = this.srtpSession.encrypt(fecRtp.payload, fecRtp.header);
-            } else {
-              finalFecPacket = fecPacket;
-            }
-          } catch (err) {
-            this.emit('error', ErrorFactory.ENCRYPTION(
-              'Failed to encrypt FEC packet with SRTP - packet not sent',
-              err as Error
-            ));
-            // Don't fall back to unencrypted - abort the send operation for security
-            return;
-          }
-
-          this._sendPacket(finalFecPacket, (err) => {
-            if (err) {
-              this.emit('error', ErrorFactory.NETWORK('Failed to send FEC packet', err));
-            }
-          });
-        }
-
-        this.fecCounter = 0;
-        this.packetBuffer = [];
-        this.packetSequenceNumbers = [];
-        this.packetTimestamps = [];
+    if (opts.fecEnabled) {
+      this.fecGroup.push({ packet, sequenceNumber, timestamp });
+      if (this.fecGroup.length >= this.config.fecGroupSize!) {
+        this._flushFecGroup();
       }
     }
-
-    // Use modulo to keep within 16-bit range
-    this.seqNum = (this.seqNum + 1) % RTP_MAX_SEQUENCE_NUMBER;
-    this.timestamp = (this.timestamp + this.config.timestampIncrement!) >>> 0;
   }
 
   /**
-   * Helper method to send a packet using either the custom transport or UDP socket
-   */
-  private _sendPacket(
-    packet: Buffer,
-    callback?: (error?: Error) => void
-  ): void {
-    if (this.customTransport) {
-      this.customTransport.send(packet, callback);
-    } else if (this.udpSocket) {
-      this.udpSocket.send(
-        packet,
-        0,
-        packet.length,
-        this.remotePort,
-        this.remoteAddress,
-        callback ? (err) => callback(err ?? undefined) : undefined
-      );
-    } else {
-      // This should never happen, but just in case
-      callback?.(new Error('No transport available for sending packets'));
-    }
-  }
-
-  /**
-   * Sends any remaining FEC packets that might be in the buffer
-   */
-  private _sendRemainingFecPackets(): void {
-    if (!this.config.fecEnabled || this.packetBuffer.length === 0) {
-      return;
-    }
-
-    // Create and send FEC packet for any remaining packets
-    const fecPacket = this._createFecPacket(
-      this.packetBuffer,
-      this.packetSequenceNumbers,
-      this.packetTimestamps
-    );
-
-    if (fecPacket.length > 0) {
-      let finalFecPacket: Buffer;
-      try {
-        if (this.srtpSession) {
-          const fecRtp = RtpPacket.deSerialize(fecPacket);
-          finalFecPacket = this.srtpSession.encrypt(fecRtp.payload, fecRtp.header);
-        } else {
-          finalFecPacket = fecPacket;
-        }
-      } catch (err) {
-        this.emit('error', ErrorFactory.ENCRYPTION(
-          'Failed to encrypt final FEC packet with SRTP - packet not sent',
-          err as Error
-        ));
-        // Don't fall back to unencrypted - abort the send operation for security
-        return;
-      }
-
-      this._sendPacket(finalFecPacket, (err) => {
-        if (err) {
-          this.emit('error', ErrorFactory.NETWORK('Failed to send final FEC packet', err));
-        }
-      });
-    }
-
-    this.packetBuffer = [];
-    this.packetSequenceNumbers = [];
-    this.packetTimestamps = [];
-    this.fecCounter = 0;
-  }
-
-  /**
-   * Close the transport resources
+   * Close the transport. Sends any pending FEC packet first. Safe to call twice.
    */
   close(): void {
+    if (this.closed) return;
+    if (this.redDrainTimer) {
+      clearTimeout(this.redDrainTimer);
+      this.redDrainTimer = null;
+    }
     try {
-      this._sendRemainingFecPackets();
-
-      if (
-        this.customTransport &&
-        typeof this.customTransport.close === 'function'
-      ) {
-        this.customTransport.close();
-      } else if (this.udpSocket) {
-        this.udpSocket.close();
+      this._flushFecGroup();
+      this.closed = true;
+      if (this.customTransport) {
+        this.customTransport.close?.();
+      } else {
+        this.udpSocket?.close();
       }
     } catch (err) {
-      this.emit('error', ErrorFactory.RESOURCE(
-        'Error closing transport resources',
-        err as Error
-      ));
+      this.emit('error', ErrorFactory.RESOURCE('Error closing transport resources', err as Error));
+    }
+  }
+
+  private _redHistory(streamIdentifier?: string): RedundancyHistory {
+    const key = streamIdentifier ?? '';
+    let history = this.redHistories.get(key);
+    if (!history) {
+      history = { blocks: [] };
+      this.redHistories.set(key, history);
+    }
+    return history;
+  }
+
+  /**
+   * Build a text/red packet (RFC 2198 §3 as profiled by RFC 4103 §4).
+   * https://www.rfc-editor.org/rfc/rfc2198#section-3
+   *
+   * Layout: RTP header, one 4-byte header per redundant block, a 1-byte header
+   * for the primary block, the redundant T140blocks oldest first, then the
+   * primary T140block.
+   *
+   *  0                   1                   2                   3
+   *  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+   * |1|   T140 PT   |  timestamp offset (14)    | block length (10) |
+   * |0|   T140 PT   |
+   */
+  private _buildRedPacket(
+    primary: Buffer,
+    history: SentBlock[],
+    header: RtpHeaderFields,
+    t140PayloadType: number,
+    redundancyLevel: number
+  ): Buffer {
+    // RFC 4103 §4.1: blocks that would need an offset above 16383 MUST NOT be sent.
+    const blocks = history
+      .slice(-redundancyLevel)
+      .filter((block) => ((header.timestamp - block.timestamp) >>> 0) <= RED_MAX_TIMESTAMP_OFFSET);
+
+    const blockHeaders = Buffer.alloc(blocks.length * 4 + 1);
+    blocks.forEach((block, i) => {
+      const timestampOffset = (header.timestamp - block.timestamp) >>> 0;
+      const word =
+        (1 << 31) | (t140PayloadType << 24) | (timestampOffset << 10) | block.payload.length;
+      blockHeaders.writeUInt32BE(word >>> 0, i * 4);
+    });
+    blockHeaders[blocks.length * 4] = t140PayloadType; // F = 0: primary block follows
+
+    return Buffer.concat([
+      buildRtpHeader(header),
+      blockHeaders,
+      ...blocks.map((block) => block.payload),
+      primary,
+    ]);
+  }
+
+  private _rememberForRedundancy(
+    history: RedundancyHistory,
+    primary: Buffer,
+    timestamp: number,
+    redundancyLevel: number
+  ): void {
+    // A block longer than the 10-bit length field cannot be carried as redundant data.
+    if (primary.length > RED_MAX_BLOCK_LENGTH) return;
+    history.blocks.push({ timestamp, payload: Buffer.from(primary) });
+    if (history.blocks.length > redundancyLevel) {
+      history.blocks.shift();
+    }
+  }
+
+  /**
+   * RFC 4103 §5.2: when text stops, keep sending packets with an empty primary
+   * T140block at every transmission interval until the last real block has gone
+   * out with all its redundant generations. Without this the last characters
+   * before an idle period are the only ones with no protection.
+   */
+  private _scheduleRedundancyDrain(): void {
+    if (this.redDrainTimer) {
+      clearTimeout(this.redDrainTimer);
+    }
+    this.redDrainTimer = setTimeout(() => {
+      this.redDrainTimer = null;
+      for (const history of this.redHistories.values()) {
+        if (history.blocks.some((block) => block.payload.length > 0)) {
+          this.sendText('', { ...history.lastOptions, markerBit: false });
+        }
+      }
+    }, SEND_INTERVAL_MS);
+    this.redDrainTimer.unref?.();
+  }
+
+  /**
+   * Build one generic FEC packet over the pending group (RFC 5109 §7).
+   * https://www.rfc-editor.org/rfc/rfc5109#section-7
+   *
+   * The FEC packet shares the media SSRC, keeps its own sequence counter, and
+   * carries the 10-byte FEC header, the 4-byte level-0 header (protection
+   * length + 16-bit mask, MSB = SN base), then the XOR of the protected
+   * packets' bytes after the fixed RTP header. It goes to the same port as the
+   * media, which RFC 5109 §14.1 says SHOULD be avoided; a receiver that does
+   * not know the FEC payload type discards it.
+   */
+  private _flushFecGroup(): void {
+    if (this.fecGroup.length === 0) return;
+    const group = this.fecGroup;
+    this.fecGroup = [];
+
+    const rtpHeader = buildRtpHeader({
+      marker: false,
+      payloadType: this.config.fecPayloadType!,
+      sequenceNumber: this.fecSeqNum,
+      timestamp: this.clock.now(),
+      ssrc: this.config.ssrc!,
+    });
+    this.fecSeqNum = (this.fecSeqNum + 1) % RTP_MAX_SEQUENCE_NUMBER;
+
+    const protectionLength = Math.max(...group.map((p) => p.packet.length - RTP_HEADER_SIZE));
+    const payload = Buffer.alloc(protectionLength);
+    let flagsRecovery = 0;
+    let markerAndPtRecovery = 0;
+    let tsRecovery = 0;
+    let lengthRecovery = 0;
+    for (const { packet, timestamp } of group) {
+      flagsRecovery ^= packet[0] & 0x3f; // P, X, CC
+      markerAndPtRecovery ^= packet[1];  // M, PT
+      tsRecovery ^= timestamp;
+      lengthRecovery ^= packet.length - RTP_HEADER_SIZE;
+      for (let i = RTP_HEADER_SIZE; i < packet.length; i += 1) {
+        payload[i - RTP_HEADER_SIZE] ^= packet[i];
+      }
+    }
+
+    const fecHeader = Buffer.alloc(FEC_HEADER_SIZE + FEC_LEVEL_HEADER_SIZE);
+    fecHeader[0] = flagsRecovery; // E = 0, L = 0
+    fecHeader[1] = markerAndPtRecovery;
+    fecHeader.writeUInt16BE(group[0].sequenceNumber, 2); // SN base
+    fecHeader.writeUInt32BE(tsRecovery >>> 0, 4);
+    fecHeader.writeUInt16BE(lengthRecovery & MAX_UINT16, 8);
+    fecHeader.writeUInt16BE(protectionLength, 10);
+    fecHeader.writeUInt16BE((MAX_UINT16 << (16 - group.length)) & MAX_UINT16, 12);
+
+    this._encryptAndSend(Buffer.concat([rtpHeader, fecHeader, payload]), 'FEC packet');
+  }
+
+  private _encryptAndSend(packet: Buffer, what: string): void {
+    let wire = packet;
+    if (this.srtpRequired) {
+      if (!this.srtpSession) {
+        this.emit('error', ErrorFactory.ENCRYPTION(`SRTP not ready - ${what} not sent`));
+        return;
+      }
+      try {
+        const rtp = RtpPacket.deSerialize(packet);
+        wire = this.srtpSession.encrypt(rtp.payload, rtp.header);
+      } catch (err) {
+        // Never fall back to plaintext.
+        this.emit('error', ErrorFactory.ENCRYPTION(
+          `Failed to encrypt ${what} with SRTP - packet not sent`,
+          err as Error
+        ));
+        return;
+      }
+    }
+
+    const onSent = (err?: Error | null): void => {
+      if (err) {
+        this.emit('error', ErrorFactory.NETWORK(`Failed to send ${what}`, err));
+      }
+    };
+    try {
+      if (this.customTransport) {
+        this.customTransport.send(wire, onSent);
+      } else {
+        this.udpSocket!.send(wire, 0, wire.length, this.remotePort, this.remoteAddress, onSent);
+      }
+    } catch (err) {
+      // A transport that throws synchronously must not kill the process: this
+      // runs from a drain timer.
+      this.emit('error', ErrorFactory.NETWORK(`Failed to send ${what}`, err as Error));
     }
   }
 }

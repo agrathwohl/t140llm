@@ -4,8 +4,13 @@ const {
   processAIStreamToSrtp,
   createSrtpKeysFromPassphrase,
   processAIStream,
-  wss,
+  createWebSocketServer,
 } = require("../dist/index");
+
+// The library does not start a server on import. The WebSocket leg of this
+// demo needs one, so create it here. It relays each message to the Unix socket
+// at /tmp/seqpacket_socket; run examples/seqpacket.js to read that end.
+const wss = createWebSocketServer();
 
 // Create a simple text stream that emits chunks of text at intervals
 class MockAIStream extends EventEmitter {
@@ -139,13 +144,9 @@ function demoSRTP() {
     ssrc: 54321,
   };
 
-  // Process the stream using library
-  const transport = processAIStreamToSrtp(
-    stream,
-    "127.0.0.1",
-    srtpConfig,
-    5006,
-  );
+  // Process the stream using library.
+  // Argument order is (stream, address, port, srtpConfig).
+  const transport = processAIStreamToSrtp(stream, "127.0.0.1", 5006, srtpConfig);
 
   // Start the stream
   stream.start();
@@ -264,19 +265,21 @@ async function runAllDemos() {
     console.log("T140LLM Demonstration");
     console.log("=====================\n");
 
-    /*await demoWebSocket();
+    await demoWebSocket();
     await demoRTP();
     await demoSRTP();
     await demoWithoutLibrary();
-    */
     await comparePerformance();
 
     console.log("\nAll demonstrations completed!");
 
-    // Close the WebSocket server
     wss.close();
   } catch (error) {
     console.error("Error during demonstration:", error);
+  } finally {
+    // The RTP and SRTP sockets close with their transports; give the last
+    // packets a moment to leave, then stop.
+    setTimeout(() => process.exit(0), 500);
   }
 }
 

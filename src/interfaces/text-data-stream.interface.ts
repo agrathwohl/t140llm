@@ -27,5 +27,4 @@ export interface ProcessorOptions {
   metadataCallback?: (metadata: LLMMetadata) => void;
   sendMetadataOverTransport?: boolean;
   onError?: (error: Error) => void;
-  preCreateConnection?: boolean;
 }

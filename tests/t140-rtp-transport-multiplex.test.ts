@@ -2,6 +2,7 @@ import * as dgram from 'dgram';
 import { EventEmitter } from 'events';
 import { T140RtpTransport } from '../src/rtp/t140-rtp-transport';
 import { RtpConfig, T140RtpErrorType } from '../src/interfaces';
+import { extractT140Text } from '../src/utils/parse-red-packet';
 
 // Mock UDP socket for capturing sent packets
 class MockSocket extends EventEmitter {
@@ -136,7 +137,7 @@ describe('T140RtpTransport with multiplexing', () => {
       
       // Check the packet payload
       const packet = mockSocket.sent[0].buffer;
-      const payload = packet.slice(12).toString('utf-8');
+      const payload = extractT140Text(packet);
       expect(payload).toBe('override-stream\x1Ehello');
     });
     

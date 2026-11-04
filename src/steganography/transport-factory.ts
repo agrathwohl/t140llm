@@ -1,6 +1,6 @@
 import createDebug from 'debug';
 import * as dgram from 'dgram';
-import { RtpConfig, TransportStream } from '../interfaces';
+import { RtpConfig, TextDataStream, TransportStream } from '../interfaces';
 import { processAIStreamToRtp } from '../processors/process-ai-stream-to-rtp';
 import { T140RtpTransport } from '../rtp/t140-rtp-transport';
 import { DEFAULT_RTP_PORT } from '../utils/constants';
@@ -55,7 +55,7 @@ export function createStegT140RtpTransport(
   let transport: TransportStream = config.customTransport ||
     createDefaultTransport(remoteAddress, remotePort);
 
-  if (config.steganography?.enabled) {
+  if (config.steganography && config.steganography.enabled !== false) {
     transport = new StegTransport(transport, config.steganography);
   }
 
@@ -80,7 +80,7 @@ export function createStegT140RtpTransport(
  * @returns The configured RTP transport
  */
 export function processAIStreamToStegRtp(
-  stream: any,
+  stream: TextDataStream,
   remoteAddress: string,
   remotePort: number = DEFAULT_RTP_PORT,
   config: RtpConfigWithSteg = {}
@@ -92,10 +92,7 @@ export function processAIStreamToStegRtp(
     config
   );
 
-  processAIStreamToRtp(stream, remoteAddress, remotePort, {
-    ...config,
-    customTransport: transport,
-  }, transport);
+  processAIStreamToRtp(stream, remoteAddress, remotePort, config, transport);
 
   return transport;
 }

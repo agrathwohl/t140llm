@@ -1,4 +1,5 @@
 const { SeqpacketServer, SeqpacketSocket } = require("node-unix-socket");
+const { extractT140Text } = require("../dist");
 const fs = require("fs");
 const dgram = require("dgram");
 
@@ -103,11 +104,12 @@ server.on("connection", (socket) => {
       );
       console.log(`  Timestamp: ${timestamp}, SSRC: ${ssrc}`);
 
-      // Extract and show payload as text if possible
+      // Extract and show the text. extractT140Text handles text/red (payload
+      // type 98), which is the default, as well as plain text/t140.
       if (buf.length > 12) {
         try {
-          const payload = buf.slice(12).toString("utf8");
-          console.log(`  Payload (${buf.length - 12} bytes): "${payload}"`);
+          const payload = extractT140Text(buf);
+          console.log(`  Text: "${payload}" (payload ${buf.length - 12} bytes)`);
         } catch (e) {
           console.log(`  Payload: Binary data (${buf.length - 12} bytes)`);
         }

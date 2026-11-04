@@ -1,8 +1,9 @@
 const { EventEmitter } = require('events');
 const dgram = require('dgram');
-const { 
+const {
   processAIStreamToRtp,
-  T140RtpTransport
+  extractT140Text,
+  T140RtpTransport,
 } = require('../dist/index');
 
 // Create a simple text stream that emits chunks of text at intervals
@@ -92,7 +93,8 @@ async function demoWithoutFEC() {
       ssrc: 12345,
       initialSequenceNumber: 1000,
       initialTimestamp: 0,
-      timestampIncrement: 160
+      timestampIncrement: 160,
+      redEnabled: false // No redundancy: this run is the unprotected baseline
     }
   );
   
@@ -128,7 +130,6 @@ async function demoWithFEC() {
   
   // Track the number of packets for statistics
   let packetsSent = 0;
-  let fecPacketsSent = 0;
   
   // Create a stream with the sample text
   const stream = new MockAIStream(sampleText);
@@ -139,8 +140,7 @@ async function demoWithFEC() {
     streamEnded = true;
     console.log('FEC-enabled RTP stream complete');
     console.log(`Media packets sent: ${packetsSent}`);
-    console.log(`FEC packets sent: ${fecPacketsSent}`);
-    console.log(`Total packets sent: ${packetsSent + fecPacketsSent}`);
+    console.log(`Media packets sent: ${packetsSent}`);
   });
   
   // Process the stream using the library with FEC enabled
@@ -154,39 +154,20 @@ async function demoWithFEC() {
       initialSequenceNumber: 2000,
       initialTimestamp: 0,
       timestampIncrement: 160,
+      redEnabled: false, // FEC (RFC 5109) replaces redundancy (RFC 2198) here
       fecEnabled: true,
       fecPayloadType: 97,
       fecGroupSize: 4 // Send one FEC packet for every 4 media packets
     }
   );
   
-  // Count packets (we need to track both media and FEC packets)
+  // Count the media packets this demo asks for. The library creates the FEC
+  // packets itself, so the receiver counts those by payload type instead of
+  // guessing here. Keep every argument: sendText takes per-packet options.
   const originalSendText = transport.sendText;
-  transport.sendText = function(text) {
+  transport.sendText = function (...args) {
     packetsSent++;
-    
-    // We'll need to count FEC packets indirectly since they're created inside the method
-    const originalUdpSend = this.udpSocket.send;
-    const self = this;
-    
-    this.udpSocket.send = function(...args) {
-      // The 4th argument is the port - we use this to identify unique calls
-      // If this is a call that's immediately following a regular packet, and it's
-      // after we've hit the FEC group size, it's probably an FEC packet
-      if (packetsSent % self.config.fecGroupSize === 0 && args[3] === self.remotePort) {
-        // This is likely an FEC packet being sent
-        fecPacketsSent++;
-      }
-      
-      return originalUdpSend.apply(this, args);
-    };
-    
-    const result = originalSendText.call(this, text);
-    
-    // Restore the original send function
-    this.udpSocket.send = originalUdpSend;
-    
-    return result;
+    return originalSendText.apply(this, args);
   };
   
   // Start the stream
@@ -198,7 +179,7 @@ async function demoWithFEC() {
       if (streamEnded) {
         clearInterval(checkEnd);
         setTimeout(() => {
-          resolve({ packetsSent, fecPacketsSent });
+          resolve({ packetsSent });
         }, 1000); // Wait a bit to ensure all packets are sent
       }
     }, 100);
@@ -211,6 +192,7 @@ function manualFecDemo() {
   
   // Create a T140RtpTransport with FEC enabled
   const transport = new T140RtpTransport('127.0.0.1', 5014, {
+    redEnabled: false, // isolate FEC from redundancy
     fecEnabled: true,
     fecPayloadType: 97,
     fecGroupSize: 3 // Small group size to see FEC packets more frequently
@@ -318,7 +300,7 @@ function setupReceivers() {
         console.log(`Simulating loss of packet 3 (won't display content)`);
       } else {
         // Extract the payload (skip the RTP header)
-        const payload = msg.slice(12).toString('utf-8');
+        const payload = extractT140Text(msg);
         console.log(`Manual demo received: ${payload}`);
       }
     }
@@ -358,7 +340,7 @@ async function runFecDemos() {
     
     // Run the demos
     const standardPacketsSent = await demoWithoutFEC();
-    const { packetsSent: fecPacketsSent, fecPacketsSent: fecProtectionSent } = await demoWithFEC();
+    const { packetsSent: packetsSentWithFec } = await demoWithFEC();
     const manualPacketsSent = await manualFecDemo();
     
     // Wait a bit to make sure all packets are received
@@ -376,12 +358,19 @@ async function runFecDemos() {
       standardPacketsSent
     );
     
+    // Media and FEC are counted apart by payload type at the receiver, so the
+    // loss figure covers media only and the FEC packets show as overhead.
     measurePacketLoss(
       'FEC-ENABLED RTP',
       stats.fecMediaPacketsReceived,
-      fecPacketsSent,
-      Math.min(stats.fecProtectionPacketsReceived, fecPacketsSent - stats.fecMediaPacketsReceived)
+      Math.max(packetsSentWithFec, stats.fecMediaPacketsReceived)
     );
+    console.log(`FEC protection packets received: ${stats.fecProtectionPacketsReceived}`);
+    if (stats.fecMediaPacketsReceived > 0) {
+      const overhead =
+        (stats.fecProtectionPacketsReceived / stats.fecMediaPacketsReceived) * 100;
+      console.log(`FEC overhead: ${overhead.toFixed(1)}% extra packets`);
+    }
     
     console.log('\n=== FEC SUMMARY ===');
     console.log('Forward Error Correction (FEC) adds overhead by sending additional packets');

@@ -15,12 +15,19 @@ import {
 } from '../utils/stream-processor';
 
 /**
- * Attach a stream to an existing T140 RTP transport with rate limiting
+ * Attach a stream to an existing T140 RTP transport.
+ *
+ * Characters are queued and paced by a token bucket at `charRateLimit`
+ * characters per second (RFC 4103 §6 "cps", default 30). The first character
+ * after an idle period goes out immediately with the M-bit set (RFC 4103 §3,
+ * §5.1); the rest drain every SEND_INTERVAL_MS. When the source stream ends,
+ * the queue keeps draining at the same rate and the transport closes once it
+ * is empty.
  *
  * @param transport The transport to attach the stream to
  * @param stream The stream to attach
  * @param rtpConfig RTP configuration options
- * @param processorOptions Processor options for handling the stream
+ * @param processorOptions Processor options; override the matching rtpConfig fields
  */
 export function attachStreamToRtpTransport(
   transport: T140RtpTransport,
@@ -29,48 +36,46 @@ export function attachStreamToRtpTransport(
   processorOptions: ProcessorOptions = {}
 ): void {
   const charRateLimit = rtpConfig.charRateLimit || DEFAULT_CHAR_RATE_LIMIT;
-  const charQueue: string[] = [];
-  let lastSendTime = Date.now();
-  let tokenBucket = charRateLimit;
   const tokenRefillRate = charRateLimit / TOKEN_REFILL_RATE_DIVISOR;
+  const charQueue: string[] = [];
+  let tokenBucket = charRateLimit;
+  let lastSendTime = Date.now();
   let drainTimer: NodeJS.Timeout | null = null;
   let isIdle = true;
   let idleTimer: NodeJS.Timeout | null = null;
+  let closeWhenDrained = false;
 
-  function refillTokens(): void {
-    const now = Date.now();
-    const elapsedMs = now - lastSendTime;
-    lastSendTime = now;
-    tokenBucket = Math.min(
-      charRateLimit,
-      tokenBucket + elapsedMs * tokenRefillRate
-    );
+  function clearTimers(): void {
+    if (drainTimer) { clearTimeout(drainTimer); drainTimer = null; }
+    if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
   }
 
   function flushQueue(): void {
     drainTimer = null;
-    refillTokens();
 
-    let firstSendInBurst = isIdle;
+    const now = Date.now();
+    tokenBucket = Math.min(charRateLimit, tokenBucket + (now - lastSendTime) * tokenRefillRate);
+    lastSendTime = now;
+
     while (charQueue.length > 0 && tokenBucket >= MIN_TOKEN_BUCKET_VALUE) {
       const charsToSend = Math.min(Math.floor(tokenBucket), charQueue.length);
       const textChunk = charQueue.splice(0, charsToSend).join('');
-      if (textChunk) {
-        if (firstSendInBurst) {
-          transport.sendText(textChunk, { markerBit: true });
-          firstSendInBurst = false;
-          isIdle = false;
-          if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
-        } else {
-          transport.sendText(textChunk);
-        }
-        tokenBucket -= textChunk.length;
+      if (!textChunk) continue;
+
+      transport.sendText(textChunk, isIdle ? { markerBit: true } : undefined);
+      tokenBucket -= textChunk.length;
+      if (isIdle) {
+        isIdle = false;
+        if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
       }
     }
 
-    if (charQueue.length > 0 && !drainTimer) {
+    if (charQueue.length > 0) {
       drainTimer = setTimeout(flushQueue, SEND_INTERVAL_MS);
-    } else if (charQueue.length === 0) {
+    } else if (closeWhenDrained) {
+      clearTimers();
+      transport.close();
+    } else {
       if (idleTimer) clearTimeout(idleTimer);
       idleTimer = setTimeout(() => { isIdle = true; idleTimer = null; }, IDLE_THRESHOLD_MS);
     }
@@ -80,32 +85,27 @@ export function attachStreamToRtpTransport(
     processBackspaces: rtpConfig.processBackspaces,
     handleMetadata: rtpConfig.handleMetadata,
     metadataCallback: rtpConfig.metadataCallback,
+    onError: rtpConfig.onError,
   });
 
   attachStreamProcessor(stream, options, {
     sendText: (text, graphemes) => {
-      charQueue.push(...(graphemes || toGraphemes(text)));
+      charQueue.push(...(graphemes ?? toGraphemes(text)));
       if (!drainTimer) {
         flushQueue();
       }
     },
-    onStreamEnd: () => {
-      if (drainTimer) { clearTimeout(drainTimer); drainTimer = null; }
-      if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
-      if (charQueue.length > 0) {
-        transport.sendText(charQueue.join(''));
-      }
-    },
     close: () => {
-      if (drainTimer) { clearTimeout(drainTimer); drainTimer = null; }
-      if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
-      transport.close();
+      closeWhenDrained = true;
+      if (!drainTimer) {
+        flushQueue();
+      }
     },
   });
 }
 
 /**
- * Create a T140 RTP transport that can be used to send T.140 data
+ * Create a T140 RTP transport that streams can be attached to later.
  *
  * @param remoteAddress Remote address to send packets to
  * @param remotePort Remote port to send packets to
@@ -126,26 +126,24 @@ export function createT140RtpTransport(
   const transport = new T140RtpTransport(remoteAddress, remotePort, rtpConfig);
 
   if (rtpConfig.bomPrewarm) {
-    transport.sendText('\uFEFF', { markerBit: true });
+    // A zero-width no-break space opens NAT pinholes before the first real character.
+    transport.sendText('﻿', { markerBit: true });
   }
 
-  const attachStream = (
-    stream: TextDataStream,
-    processorOptions: ProcessorOptions = {}
-  ) => {
-    attachStreamToRtpTransport(transport, stream, rtpConfig, processorOptions);
+  return {
+    transport,
+    attachStream: (stream, processorOptions = {}) => {
+      attachStreamToRtpTransport(transport, stream, rtpConfig, processorOptions);
+    },
   };
-
-  return { transport, attachStream };
 }
 
 /**
- * Process an AI stream and send chunks directly as T.140 over RTP
- * with rate limiting to ensure compliance with specified character rate limits
+ * Stream an LLM response as T.140 over RTP.
  *
  * @param stream The AI stream to process
  * @param remoteAddress Remote address to send packets to
- * @param remotePort Remote port to send packets to (defaults to DEFAULT_RTP_PORT)
+ * @param remotePort Remote port to send packets to (default 5004)
  * @param rtpConfig Configuration options including custom transport
  * @param existingTransport Optional existing T140RtpTransport to use
  * @returns T140RtpTransport instance
@@ -157,20 +155,12 @@ export function processAIStreamToRtp(
   rtpConfig: RtpConfig = {},
   existingTransport?: T140RtpTransport
 ): T140RtpTransport {
-  const processorOptions: ProcessorOptions = {
-    processBackspaces: rtpConfig.processBackspaces,
-    handleMetadata: rtpConfig.handleMetadata,
-    metadataCallback: rtpConfig.metadataCallback,
-  };
-
   if (existingTransport) {
-    attachStreamToRtpTransport(existingTransport, stream, rtpConfig, processorOptions);
+    attachStreamToRtpTransport(existingTransport, stream, rtpConfig);
     return existingTransport;
   }
 
-  const { transport, attachStream } = createT140RtpTransport(
-    remoteAddress, remotePort, rtpConfig
-  );
-  attachStream(stream, processorOptions);
+  const { transport, attachStream } = createT140RtpTransport(remoteAddress, remotePort, rtpConfig);
+  attachStream(stream);
   return transport;
 }

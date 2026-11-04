@@ -5,7 +5,13 @@
  * used with the T140RtpTransport class directly or with the process functions.
  */
 
-const { processAIStreamToRtp, processAIStreamToSrtp, createSrtpKeysFromPassphrase, T140RtpTransport } = require('../dist');
+const {
+  processAIStreamToRtp,
+  processAIStreamToSrtp,
+  createSrtpKeysFromPassphrase,
+  extractT140Text,
+  T140RtpTransport,
+} = require('../dist');
 const { EventEmitter } = require('events');
 
 /**
@@ -49,6 +55,7 @@ function createMockAIStream() {
 class LoggingTransport {
   constructor(options = {}) {
     this.name = options.name || 'LoggingTransport';
+    this.encrypted = options.encrypted === true;
     this.packetCount = 0;
     this.totalBytes = 0;
     console.log(`[${this.name}] Created custom transport`);
@@ -68,10 +75,11 @@ class LoggingTransport {
     const headerStr = data.slice(0, 12).toString('hex').match(/.{1,2}/g).join(' ');
     console.log(`[${this.name}] RTP Header: ${headerStr}`);
     
-    // Get the text payload (skip the 12-byte RTP header)
-    if (data.length > 12) {
-      const payload = data.slice(12).toString('utf8');
-      console.log(`[${this.name}] Payload: "${payload}"`);
+    // Get the text. Redundancy is on by default, so the packet is text/red and
+    // the text is not simply at offset 12. extractT140Text handles both forms.
+    // SRTP packets are encrypted, so skip them.
+    if (data.length > 12 && !this.encrypted) {
+      console.log(`[${this.name}] Text: "${extractT140Text(data)}"`);
     }
     
     // Call the callback with no error
@@ -102,7 +110,8 @@ function directExample() {
     {
       customTransport, // Pass the custom transport
       payloadType: 96,
-      redEnabled: true, // Enable redundancy to see how it works with custom transport
+      // Redundancy is the default (RFC 4103 section 4); shown here explicitly.
+      redEnabled: true,
       redPayloadType: 98,
       redundancyLevel: 2,
     }
@@ -134,7 +143,9 @@ function rtpExample() {
     {
       customTransport,
       payloadType: 96,
-      fecEnabled: true, // Enable FEC to see how it works with custom transport
+      // FEC (RFC 5109) is an alternative to redundancy, so turn RED off here.
+      redEnabled: false,
+      fecEnabled: true,
       fecPayloadType: 97,
       fecGroupSize: 3,
     }
@@ -150,32 +161,30 @@ function srtpExample() {
   // Create a mock AI stream
   const stream = createMockAIStream();
   
-  // Create a custom transport
-  const customTransport = new LoggingTransport({ name: "SrtpExample" });
-  
-  // Generate SRTP keys
+  // Create a custom transport. Its payloads are ciphertext, so don't decode them.
+  const customTransport = new LoggingTransport({ name: "SrtpExample", encrypted: true });
+
+  // Derive keys from a passphrase. For keys negotiated over the wire instead,
+  // see dtls_srtp_example.js, which needs no shared secret.
   const { masterKey, masterSalt } = createSrtpKeysFromPassphrase("test-passphrase");
-  
-  // Process the stream with the custom transport using SRTP
+
+  // Argument order is (stream, address, port, srtpConfig)
   const transport = processAIStreamToSrtp(
     stream,
     "dummy-address", // Not used with custom transport
+    5006,            // Not used with custom transport
     {
       masterKey,
       masterSalt,
       customTransport,
       payloadType: 96,
-    },
-    5006 // Not used with custom transport
+    }
   );
-  
+
   // The transport will be closed automatically when the stream ends
 }
 
 // Run the examples
 directExample();
 setTimeout(rtpExample, 1000);
-// SRTP example is disabled for now due to an issue with werift-rtp dependency
-// Error: SrtpPolicy is not a constructor
-// To enable this example, ensure werift-rtp is properly installed and configured
-// setTimeout(srtpExample, 7000);
+setTimeout(srtpExample, 7000);

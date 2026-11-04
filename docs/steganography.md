@@ -1,8 +1,16 @@
 # Steganography
 
-The steganography module hides RTP packets inside cover media (images, audio, or other buffers) before they go on the wire. The encoding algorithm can be a built-in fixed algorithm or one generated at runtime by an LLM.
+The steganography module hides RTP packets inside cover media (images, audio, or other buffers) before they go on the wire. Encoding is performed by [llm-steg](https://github.com/agrathwohl/llm-steg), a transport-agnostic steganography library.
 
-It ships as a **separate, optional module** — it is deliberately not re-exported from the package root, so the main entry point stays free of LLM dependencies. Import it from the steganography build:
+Steganography is obfuscation, not confidentiality. Combine it with SRTP when the text must stay secret.
+
+It ships as a **separate, optional module**. It is deliberately not re-exported from the package root, so the main entry point has no steganography dependency. Install the optional package, then import the module from its own build:
+
+```sh
+npm config set @agrathwohl:registry https://npm.pkg.github.com
+# a GitHub token with the read:packages scope is required
+NODE_AUTH_TOKEN=<token> npm install @agrathwohl/llm-steg
+```
 
 ```typescript
 import {
@@ -11,6 +19,8 @@ import {
   StegTransport,
 } from "t140llm/dist/steganography";
 ```
+
+`@agrathwohl/llm-steg` is an `optionalDependency`, so `npm install t140llm` succeeds without it. Importing this module without it throws a module-not-found error.
 
 ## Quick start
 
@@ -22,9 +32,9 @@ import { processAIStreamToStegRtp } from "t140llm/dist/steganography";
 const transport = processAIStreamToStegRtp(stream, "192.168.1.100", 5004, {
   steganography: {
     enabled: true,
-    encodeMode: "fixed",       // or "llm" to generate the algorithm at runtime
-    coverMedia: [imageBuffer], // buffers to hide packets inside
-    encodingRatio: 100,        // percent of each packet to encode
+    algorithm: "lsb",          // least significant bit, from llm-steg
+    coverMedia: [imageBuffer], // buffers to hide packets inside, used round-robin
+    onError: "throw",          // or "passthrough" / "drop"
   },
 });
 // transport.close() when done
@@ -36,14 +46,16 @@ Set on `RtpConfigWithSteg.steganography`.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `enabled` | `boolean` | **Required.** Turn steganography on |
-| `encodeMode` | `'llm' \| 'fixed'` | **Required.** Generate the algorithm with an LLM, or use a built-in one |
-| `coverMedia` | `Buffer[]` | Cover media (image/audio/other) to hide data in |
-| `prompt` | `string` | LLM prompt for algorithm generation (`encodeMode: 'llm'`) |
-| `algorithm` | `string` | Pre-generated algorithm code (`encodeMode: 'fixed'`) |
-| `seed` | `string` | Random seed for deterministic algorithm generation |
-| `encodingRatio` | `number` | Percent of each packet to encode (0–100, default `100`) |
-| `llmProvider` | `unknown` | Custom LLM provider; falls back to OpenAI when omitted |
+| `enabled` | `boolean` | Turn steganography on (default `true`) |
+| `algorithm` | `'lsb'` | Encoding algorithm (default `'lsb'`) |
+| `coverMedia` | `Buffer[]` | Buffers to hide packets inside, used round-robin. For LSB each buffer needs at least 8 times the packet size plus 4 bytes |
+| `seed` | `string` | Seed for deterministic encoding. Random when omitted |
+| `onError` | `'passthrough' \| 'throw' \| 'drop'` | What to do when a packet cannot be encoded (default `'throw'`) |
+| `debug` | `boolean` | Log encode and decode operations (default `false`) |
+| `encodeMode` | `'fixed'` | **Deprecated.** Only `'fixed'` is accepted and it is the default. The `'llm'` mode evaluated generated code at runtime and was removed |
+| `encodingRatio` | `number` | **Deprecated.** No longer used |
+
+With `onError: 'throw'` and the default, a failed encode is reported through the `send` callback. `send` never throws, because the RTP send path calls it from a timer.
 
 ### RtpConfigWithSteg
 
@@ -74,7 +86,6 @@ import { StegTransport } from "t140llm/dist/steganography";
 
 const steg = new StegTransport(innerTransport, {
   enabled: true,
-  encodeMode: "fixed",
   coverMedia: [coverBuffer],
 });
 ```
@@ -92,6 +103,6 @@ It implements [`StegTransportInterface`](/steganography#stegtransport):
 
 ## Examples
 
-- [`examples/steganography/llm_steg_example.js`](https://github.com/agrathwohl/t140llm/blob/master/examples/steganography/llm_steg_example.js) — LLM-generated encoding algorithm
-- [`examples/steganography/custom_steg_transport_example.js`](https://github.com/agrathwohl/t140llm/blob/master/examples/steganography/custom_steg_transport_example.js) — custom steganographic transport
-- [`examples/steganography/README.md`](https://github.com/agrathwohl/t140llm/blob/master/examples/steganography/README.md) — full walkthrough
+- [`examples/steganography/llm_steg_example.js`](https://github.com/agrathwohl/t140llm/blob/master/examples/steganography/llm_steg_example.js) - LSB encoding with llm-steg
+- [`examples/steganography/custom_steg_transport_example.js`](https://github.com/agrathwohl/t140llm/blob/master/examples/steganography/custom_steg_transport_example.js) - custom steganographic transport with bit-change analysis
+- [`examples/steganography/README.md`](https://github.com/agrathwohl/t140llm/blob/master/examples/steganography/README.md) - full walkthrough

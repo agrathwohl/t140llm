@@ -9,11 +9,28 @@ to provide an additional layer of security and obfuscation for your real-time te
 
 **Powered by [llm-steg](https://github.com/agrathwohl/llm-steg)** - A transport-agnostic steganography library.
 
+Steganography is obfuscation, not confidentiality. Combine it with SRTP when the text must stay secret.
+
 Key features:
 - LSB (Least Significant Bit) steganography algorithm
 - Customizable steganography transports
 - Integration with RTP packet streaming
 - Transport-agnostic design
+
+## Install the optional dependency
+
+`@agrathwohl/llm-steg` is published to GitHub Packages, so it needs a scope registry and a token with the `read:packages` scope. It is an `optionalDependency` of t140llm: `npm install t140llm` works without it, but these examples do not.
+
+```bash
+npm config set @agrathwohl:registry https://npm.pkg.github.com
+NODE_AUTH_TOKEN=<your token> npm install @agrathwohl/llm-steg
+```
+
+The steganography module is not re-exported from the package root. Import it from its own build, as the examples do:
+
+```javascript
+const { StegTransport } = require('t140llm/dist/steganography');
+```
 
 ## Examples
 
@@ -49,17 +66,18 @@ node examples/steganography/custom_steg_transport_example.js
 
 The steganography system consists of:
 
-1. **StegTransport**: A transport wrapper that applies steganography to packets (uses llm-steg internally)
-2. **LSBAlgorithm**: LSB steganography from llm-steg for encoding/decoding
-3. **RTP Extensions**: Extensions to the RTP configuration to support steganography
+1. **StegTransport**: a transport wrapper that applies steganography to packets. It drives llm-steg's `StegEngine`.
+2. **LSBAlgorithm**: LSB steganography from llm-steg, used for encoding and decoding
+3. **RTP Extensions**: `RtpConfigWithSteg` adds a `steganography` block to the RTP configuration
 
 The LSB (Least Significant Bit) algorithm encodes data in the least significant bits of cover media bytes. This provides a good balance of capacity and resilience.
 
 ### Capacity
 
 - Each byte of cover media can store 1 bit of secret data
-- A 10KB cover media can hide ~1.2KB of secret data
+- A 10KB cover media can hide about 1.2KB of secret data
 - 4 bytes are reserved for the length header
+- A packet that does not fit follows the `onError` setting
 
 ## Security Considerations
 
@@ -81,13 +99,14 @@ When using these steganography features in production:
 ### StegTransport
 
 ```javascript
-const { StegTransport } = require('t140llm');
+const { StegTransport } = require('t140llm/dist/steganography');
 
 const steg = new StegTransport(innerTransport, {
   enabled: true,
-  encodeMode: 'fixed',
+  algorithm: 'lsb',
   coverMedia: [Buffer.alloc(1024)],
-  seed: 'optional-seed'
+  seed: 'optional-seed',
+  onError: 'throw' // or 'passthrough' / 'drop'
 });
 
 // Encode data into cover media
@@ -106,7 +125,7 @@ steg.updateConfig({ enabled: false });
 ### Factory Functions
 
 ```javascript
-const { createStegT140RtpTransport, processAIStreamToStegRtp } = require('t140llm');
+const { createStegT140RtpTransport, processAIStreamToStegRtp } = require('t140llm/dist/steganography');
 
 // Create RTP transport with steganography
 const transport = createStegT140RtpTransport('127.0.0.1', 5004, {

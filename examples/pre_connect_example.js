@@ -8,7 +8,7 @@
  */
 
 const {
-  createT140WebSocketConnection,
+  createT140WebSocketTransport,
   createDirectSocketTransport,
   createT140RtpTransport,
   createT140SrtpTransport,
@@ -25,7 +25,7 @@ function webSocketExample() {
   console.log("Pre-connecting with WebSocket transport...");
 
   // Create the WebSocket connection before the AI stream is available
-  const { connection, attachStream } = createT140WebSocketConnection();
+  const { connection, attachStream } = createT140WebSocketTransport();
 
   console.log("WebSocket connection established, waiting for AI stream...");
 
@@ -112,7 +112,10 @@ function rtpExample() {
     5004,
     {
       charRateLimit: 50, // 50 characters per second
-      fecEnabled: true, // Enable Forward Error Correction
+      // Redundancy (RFC 2198) is on by default. FEC is the alternative, so
+      // turning FEC on here means turning RED off.
+      redEnabled: false,
+      fecEnabled: true,
     },
   );
 
@@ -157,15 +160,16 @@ function srtpExample() {
     "secure-t140-connection",
   );
 
-  // Create the SRTP transport before the AI stream is available
+  // Create the SRTP transport before the AI stream is available.
+  // Argument order is (address, port, srtpConfig).
   const { transport, attachStream } = createT140SrtpTransport(
     "127.0.0.1",
+    5006,
     {
       masterKey,
       masterSalt,
       processBackspaces: true,
     },
-    5004,
   );
 
   console.log("SRTP transport established, waiting for AI stream...");
@@ -212,5 +216,7 @@ function srtpExample() {
 webSocketExample();
 directSocketExample();
 rtpExample();
-//srtpExample();
+srtpExample();
+
+// For SRTP without a shared passphrase, see dtls_srtp_example.js.
 

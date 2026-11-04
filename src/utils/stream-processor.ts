@@ -9,6 +9,7 @@ import { extractTextFromChunk } from './extract-text';
 export interface StreamProcessorCallbacks {
   sendText: (text: string, graphemes?: string[]) => void;
   sendMetadata?: (metadata: LLMMetadata) => void;
+  /** The source stream ended or failed. */
   close: () => void;
   onStreamEnd?: () => void;
 }
@@ -38,6 +39,7 @@ export function resolveStreamOptions(
     processBackspaces?: boolean;
     handleMetadata?: boolean;
     metadataCallback?: (metadata: LLMMetadata) => void;
+    onError?: (error: Error) => void;
     sendMetadataOverTransport?: boolean;
   }
 ): ResolvedStreamOptions {
@@ -51,7 +53,7 @@ export function resolveStreamOptions(
       false,
     metadataCallback:
       processorOptions.metadataCallback ?? configOptions?.metadataCallback,
-    onError: processorOptions.onError,
+    onError: processorOptions.onError ?? configOptions?.onError,
     sendMetadataOverTransport:
       processorOptions.sendMetadataOverTransport ??
       configOptions?.sendMetadataOverTransport ??
@@ -62,7 +64,7 @@ export function resolveStreamOptions(
 /**
  * Type guard to detect AsyncIterable streams (modern LLM SDK streams).
  */
-function isAsyncIterable(
+export function isAsyncIterable(
   stream: TextDataStream
 ): stream is AsyncIterable<unknown> {
   return (
@@ -70,127 +72,89 @@ function isAsyncIterable(
     typeof (stream as any)[Symbol.asyncIterator] === 'function'
   );
 }
+
+// ponytail: the backspace buffer only needs to know whether there is text left to
+// erase, so keep a short tail instead of the whole conversation.
+const BACKSPACE_BUFFER_TAIL = 256;
+
 /**
  * Attach a stream to a transport via the shared processing pipeline.
  * Handles text extraction, metadata handling, backspace processing,
- * buffer flushing, and error propagation.
+ * and error propagation for both EventEmitter and AsyncIterable streams.
  *
  * @param stream The stream to process
  * @param options Resolved processing options
  * @param callbacks Transport-specific callbacks
+ * @returns A function that detaches from the stream. It removes only the
+ *   listeners added here, or stops consuming an AsyncIterable.
  */
 export function attachStreamProcessor(
   stream: TextDataStream,
   options: ResolvedStreamOptions,
   callbacks: StreamProcessorCallbacks
-): void {
+): () => void {
   let textBuffer = '';
-  if (isAsyncIterable(stream)) {
-    (async () => {
-      try {
-        for await (const chunk of stream) {
-          const { text, metadata } = extractTextFromChunk(chunk, options.handleMetadata);
+  let detached = false;
 
-          if (options.handleMetadata && metadata) {
-            try {
-              options.metadataCallback?.(metadata);
-            } catch (_cbErr) {
-              // Prevent callback exceptions from crashing pipeline
-            }
-
-            if (
-              options.sendMetadataOverTransport
-              && callbacks.sendMetadata
-            ) {
-              callbacks.sendMetadata(metadata);
-            }
-          }
-
-          if (!text) continue;
-
-          let textToSend = text;
-
-          if (options.processBackspaces) {
-            const result = processT140BackspaceChars(
-              text,
-              textBuffer
-            );
-            textBuffer = result.updatedBuffer;
-            textToSend = result.processedText;
-            if (!textToSend) continue;
-            callbacks.sendText(textToSend, result.processedGraphemes);
-          } else {
-            callbacks.sendText(textToSend);
-          }
-        }
-        if (textBuffer) {
-          callbacks.sendText(textBuffer);
-        }
-        callbacks.onStreamEnd?.();
-        callbacks.close();
-      } catch (err) {
-        // Equivalent to 'error' event
-        const error = err instanceof Error
-          ? err : new Error(String(err));
-        options.onError?.(error);
-        callbacks.close();
-      }
-    })().catch((err) => {
-      // Defensive catch for unhandled promise rejections
-      const error = err instanceof Error
-        ? err : new Error(String(err));
-      options.onError?.(error);
-      callbacks.close();
-    });
-    return;
-  }
-
-  // EventEmitter path (existing behavior — unchanged)
-  stream.on('data', (chunk: unknown) => {
+  const handleChunk = (chunk: unknown, emitMetadata?: (metadata: LLMMetadata) => void): void => {
     const { text, metadata } = extractTextFromChunk(chunk, options.handleMetadata);
 
     if (options.handleMetadata && metadata) {
-      stream.emit('metadata', metadata);
+      emitMetadata?.(metadata);
       try {
         options.metadataCallback?.(metadata);
       } catch (_cbErr) {
-        // Prevent callback exceptions from crashing pipeline
+        // A throwing callback must not stop the text.
       }
-
-      if (
-        options.sendMetadataOverTransport
-        && callbacks.sendMetadata
-      ) {
-        callbacks.sendMetadata(metadata);
+      if (options.sendMetadataOverTransport) {
+        callbacks.sendMetadata?.(metadata);
       }
     }
 
     if (!text) return;
 
-    let textToSend = text;
+    if (!options.processBackspaces) {
+      callbacks.sendText(text);
+      return;
+    }
 
-    if (options.processBackspaces) {
-      const result = processT140BackspaceChars(
-        text,
-        textBuffer
-      );
-      textBuffer = result.updatedBuffer;
-      textToSend = result.processedText;
-      if (!textToSend) return;
-      callbacks.sendText(textToSend, result.processedGraphemes);
-    } else {
-      callbacks.sendText(textToSend);
+    const result = processT140BackspaceChars(text, textBuffer);
+    textBuffer = Array.from(result.updatedBuffer).slice(-BACKSPACE_BUFFER_TAIL).join('');
+    if (result.processedText) {
+      callbacks.sendText(result.processedText, result.processedGraphemes);
     }
-  });
-  stream.on('end', () => {
-    if (textBuffer) {
-      callbacks.sendText(textBuffer);
-    }
+  };
+
+  const finish = (): void => {
     callbacks.onStreamEnd?.();
     callbacks.close();
-  });
-  stream.on('error', (err: Error) => {
-    options.onError?.(err);
+  };
+
+  const fail = (err: unknown): void => {
+    options.onError?.(err instanceof Error ? err : new Error(String(err)));
     callbacks.close();
-  });
+  };
+
+  if (isAsyncIterable(stream)) {
+    (async () => {
+      for await (const chunk of stream) {
+        if (detached) break; // break calls the iterator's return()
+        handleChunk(chunk);
+      }
+      if (!detached) finish();
+    })().catch(fail);
+    return () => { detached = true; };
+  }
+
+  const onData = (chunk: unknown): void => {
+    handleChunk(chunk, (metadata) => stream.emit('metadata', metadata));
+  };
+  stream.on('data', onData);
+  stream.on('end', finish);
+  stream.on('error', fail);
+  return () => {
+    stream.off('data', onData);
+    stream.off('end', finish);
+    stream.off('error', fail);
+  };
 }

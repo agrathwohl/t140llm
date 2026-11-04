@@ -45,7 +45,7 @@ processAIStream(stream);
 
 ## Google Gemini
 
-Gemini returns an async iterable — pass `result.stream` directly, no wrapper needed.
+Gemini returns an async iterable. Pass `result.stream` directly, with no wrapper.
 
 ```typescript
 import { GoogleGenerativeAI } from "@google/generative-ai";

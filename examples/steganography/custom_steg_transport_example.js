@@ -6,11 +6,13 @@
  */
 
 const { EventEmitter } = require('events');
+// Steganography is an optional module with its own build. It needs
+// @agrathwohl/llm-steg installed; see this directory's README.
 const {
   StegTransport,
   createStegT140RtpTransport,
   processAIStreamToStegRtp
-} = require('../../dist');
+} = require('../../dist/steganography');
 
 /**
  * Create a simple mock AI stream for demonstration purposes
@@ -190,7 +192,7 @@ function runExample() {
   // Note: Uses llm-steg's LSB algorithm internally
   const customStegConfig = {
     enabled: true,
-    encodeMode: 'fixed',
+    algorithm: 'lsb',
     coverMedia,
     seed: 'custom-example-seed'
   };
@@ -198,7 +200,7 @@ function runExample() {
   // Create a custom steg transport
   const stegTransport = new CustomStegTransport(innerTransport, customStegConfig);
 
-  // Create the T140RtpTransport using the custom steg transport
+  // Create the T140RtpTransport that sends through the custom steg transport
   const transport = createStegT140RtpTransport(
     '127.0.0.1', // Dummy address
     5004,        // Dummy port
@@ -209,13 +211,11 @@ function runExample() {
     }
   );
 
-  // Attach the AI stream
+  // Attach the AI stream to that transport. It goes in as the fifth argument,
+  // the existing transport. Passing it as customTransport would be wrong:
+  // customTransport takes a TransportStream with a send() method.
   const { processAIStreamToRtp } = require('../../dist');
-  processAIStreamToRtp(stream, '127.0.0.1', 5004, {
-    customTransport: transport,
-    payloadType: 96,
-    ssrc: 12345
-  });
+  processAIStreamToRtp(stream, '127.0.0.1', 5004, { payloadType: 96 }, transport);
 
   console.log('Streaming LLM text with custom steganography transport...\n');
 
@@ -246,7 +246,7 @@ function demonstrateBitAnalysis() {
   // Create custom steg transport
   const stegTransport = new CustomStegTransport(mockTransport, {
     enabled: true,
-    encodeMode: 'fixed',
+    algorithm: 'lsb',
     coverMedia
   });
 
